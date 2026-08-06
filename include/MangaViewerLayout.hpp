@@ -17,11 +17,16 @@ class MangaViewerLayout : public pu::ui::Layout {
         }
 
     private:
+        static constexpr s32 ScrollSpeed = 25;
+
         void LoadPage(const u32 index);
+        void SetScrollOffset(const s32 offset);
 
         std::string manga_path;
         std::vector<std::string> page_files;
         u32 current_page;
+        s32 scroll_offset;
+        s32 max_scroll_offset;
         OnBack on_back;
         pu::ui::elm::Image::Ref pageImage;
         pu::ui::elm::TextBlock::Ref pageIndicator;
