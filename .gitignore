@@ -1,0 +1,52 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.elf
+*.bin
+*.nso
+*.npdm
+build/
+dist/
+*.dol
+*.elf.sym
+
+# DevKitPro
+devkitpro/
+DEVKITPRO/
+DEVKITARM/
+
+# Plutonium
+plutonium/
+Plutonium/
+*.nro
+*.nacp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-workspace
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Dependencies
+*.lib
+*.dll
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+
+# Environment
+.env
+.env.local
