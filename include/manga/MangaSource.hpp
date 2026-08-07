@@ -22,4 +22,10 @@ namespace manga {
     // should be browsed with another MangaListLayout instead.
     bool IsLeafManga(const std::string &path);
 
+    // Returns the raw encoded bytes of a representative cover image for path:
+    // its first page if path is a leaf manga, or the first page found by
+    // descending into its entries (in listing order) otherwise. Returns an
+    // empty vector if no page could be found anywhere under path.
+    std::vector<uint8_t> GetCoverImage(const std::string &path);
+
 }

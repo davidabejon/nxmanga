@@ -63,4 +63,22 @@ namespace manga {
         return IsSupportedArchive(path);
     }
 
+    std::vector<uint8_t> GetCoverImage(const std::string &path) {
+        if (IsLeafManga(path)) {
+            auto source = OpenMangaSource(path);
+            if ((source == nullptr) || (source->GetPageCount() == 0)) {
+                return {};
+            }
+            return source->ReadPage(0);
+        }
+
+        for (const auto &name : ListMangaEntries(path)) {
+            auto cover = GetCoverImage(path + "/" + name);
+            if (!cover.empty()) {
+                return cover;
+            }
+        }
+        return {};
+    }
+
 }
