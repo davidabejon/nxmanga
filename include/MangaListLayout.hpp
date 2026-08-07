@@ -3,6 +3,9 @@
 #include <pu/Plutonium>
 #include <MangaGrid.hpp>
 #include <LoadingSpinner.hpp>
+#include <RoundedRectangle.hpp>
+#include <SideMenu.hpp>
+#include <Settings.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -31,6 +34,8 @@ class MangaListLayout : public pu::ui::Layout {
         // instead of blocking on every cover up front.
         void LoadNextPendingCover();
 
+        std::string GetOrientationLabel() const;
+
         std::string manga_root;
         OnMangaSelected on_selected;
         OnBack on_back;
@@ -38,7 +43,10 @@ class MangaListLayout : public pu::ui::Layout {
         MangaGrid::Ref grid;
         LoadingSpinner::Ref spinner;
         pu::ui::elm::TextBlock::Ref loadingText;
+        RoundedRectangle::Ref settingsHintBg;
+        pu::ui::elm::TextBlock::Ref settingsHint;
         std::vector<std::string> pending_paths;
         std::vector<std::string> pending_names;
         size_t pending_index;
+        SideMenu::Ref sideMenu;
 };

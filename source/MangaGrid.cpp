@@ -1,4 +1,5 @@
 #include <MangaGrid.hpp>
+#include <Lang.hpp>
 #include <algorithm>
 
 MangaGrid::MangaGrid(const s32 x, const s32 y, const s32 width, const s32 height, const s32 columns) : Element(), x(x), y(y), w(width), h(height), columns(columns), selected_index(0), scroll_y(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_y(0) {}
@@ -255,7 +256,7 @@ void MangaGrid::RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::
 
         static pu::sdl2::TextureHandle::Ref mark_tex = nullptr;
         if (mark_tex == nullptr) {
-            mark_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large), "?", MangaGrid::ThumbnailPlaceholderMarkColor));
+            mark_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large), lang::Get("manga_grid.cover_placeholder"), MangaGrid::ThumbnailPlaceholderMarkColor));
         }
 
         const auto tex = mark_tex->Get();
@@ -299,7 +300,7 @@ void MangaGrid::RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::
 }
 
 void MangaGrid::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
-    if (this->cards.empty()) {
+    if (!this->input_enabled || this->cards.empty()) {
         return;
     }
 

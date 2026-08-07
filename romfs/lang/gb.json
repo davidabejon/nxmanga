@@ -1,0 +1,24 @@
+{
+    "app_title": "nxmanga",
+    "language_name": "English",
+    "common": {
+        "loading": "Loading...",
+        "side_menu_title": "Options",
+        "side_menu_close": "Close menu",
+        "side_menu_footer": "A Select    B Close",
+        "orientation_horizontal": "View: Horizontal",
+        "orientation_vertical": "View: Vertical"
+    },
+    "manga_list": {
+        "no_mangas_found": "No manga found in {path}",
+        "settings_hint": "Press X to view settings"
+    },
+    "manga_viewer": {
+        "no_images": "No images",
+        "back_to_list": "Back to list",
+        "page_indicator": "{current} / {total}"
+    },
+    "manga_grid": {
+        "cover_placeholder": "?"
+    }
+}

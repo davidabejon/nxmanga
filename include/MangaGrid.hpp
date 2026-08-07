@@ -36,6 +36,13 @@ class MangaGrid : public pu::ui::elm::Element {
             return this->cards.empty();
         }
 
+        // Lets an owning Layout keep the grid on screen (e.g. dimmed behind
+        // an overlay) while ignoring input, instead of hiding it outright
+        // via SetVisible, which would also stop it from rendering.
+        inline void SetInputEnabled(const bool enabled) {
+            this->input_enabled = enabled;
+        }
+
         void AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail);
         void ClearItems();
 
@@ -103,6 +110,7 @@ class MangaGrid : public pu::ui::elm::Element {
         s32 w;
         s32 h;
         s32 columns;
+        bool input_enabled = true;
         size_t selected_index;
         s32 scroll_y;
         std::vector<Card> cards;

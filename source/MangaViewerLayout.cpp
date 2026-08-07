@@ -1,7 +1,8 @@
 #include <MangaViewerLayout.hpp>
+#include <Lang.hpp>
 #include <cmath>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
@@ -12,105 +13,37 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         this->LoadPage(0);
     }
     else {
-        this->SetPageIndicatorText("Sin imagenes");
+        this->SetPageIndicatorText(lang::Get("manga_viewer.no_images"));
     }
 
     this->Add(this->pageIndicatorBg);
     this->Add(this->pageIndicator);
 
-    const auto screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
-    const auto screen_h = static_cast<s32>(pu::ui::render::ScreenHeight);
+    this->sideMenu = SideMenu::New(this);
 
-    const auto panel_w = MangaViewerLayout::MenuPanelWidth;
-    const auto panel_h = screen_h - (MangaViewerLayout::MenuPanelMargin * 2);
-    const auto panel_x = screen_w - panel_w - MangaViewerLayout::MenuPanelMargin;
-    const auto panel_y = MangaViewerLayout::MenuPanelMargin;
-    const auto content_x = panel_x + MangaViewerLayout::MenuPanelInset;
-
-    this->menuBg = RoundedRectangle::New(panel_x, panel_y, panel_w, panel_h, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuPanelBorderRadius);
-    this->menuBg->SetVisible(false);
-    this->Add(this->menuBg);
-
-    this->menuTitle = pu::ui::elm::TextBlock::New(content_x, panel_y + 28, "Opciones");
-    this->menuTitle->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large));
-    this->menuTitle->SetColor(MangaViewerLayout::MenuItemTextColor);
-    this->menuTitle->SetVisible(false);
-    this->Add(this->menuTitle);
-
-    const auto divider_y = this->menuTitle->GetY() + this->menuTitle->GetHeight() + 20;
-    this->menuDivider = pu::ui::elm::Rectangle::New(content_x, divider_y, panel_w - (MangaViewerLayout::MenuPanelInset * 2), 3, MangaViewerLayout::MenuAccentColor);
-    this->menuDivider->SetVisible(false);
-    this->Add(this->menuDivider);
-
-    const auto menu_y = divider_y + 24;
-    const auto menu_w = panel_w - (MangaViewerLayout::MenuItemsInset * 2);
-    const auto menu_item_x = panel_x + MangaViewerLayout::MenuItemsInset;
-
-    this->menu = pu::ui::elm::Menu::New(menu_item_x, menu_y, menu_w, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuItemHeight, 3);
-    this->menu->SetVisible(false);
-
-    this->orientationItem = pu::ui::elm::MenuItem::New(this->GetOrientationLabel());
-    this->orientationItem->SetColor(MangaViewerLayout::MenuItemTextColor);
-    const auto orientation_cb = [this]() {
+    this->sideMenu->AddItem([this]() {
+        return this->GetOrientationLabel();
+    }, [this]() {
         this->ToggleOrientation();
-    };
-    this->orientationItem->AddOnKey(orientation_cb);
-    this->orientationItem->AddOnKey(orientation_cb, pu::ui::TouchPseudoKey);
-    this->menu->AddItem(this->orientationItem);
+    });
 
-    auto back_item = pu::ui::elm::MenuItem::New("Volver a la lista");
-    back_item->SetColor(MangaViewerLayout::MenuItemTextColor);
-    const auto back_cb = [this]() {
-        this->SetMenuVisible(false);
+    this->sideMenu->AddItem([]() {
+        return lang::Get("manga_viewer.back_to_list");
+    }, [this]() {
+        this->sideMenu->SetOpen(false);
         if (this->on_back) {
             this->on_back();
         }
-    };
-    back_item->AddOnKey(back_cb);
-    back_item->AddOnKey(back_cb, pu::ui::TouchPseudoKey);
-    this->menu->AddItem(back_item);
-
-    auto close_item = pu::ui::elm::MenuItem::New("Cerrar menu");
-    close_item->SetColor(MangaViewerLayout::MenuItemTextColor);
-    const auto close_cb = [this]() {
-        this->SetMenuVisible(false);
-    };
-    close_item->AddOnKey(close_cb);
-    close_item->AddOnKey(close_cb, pu::ui::TouchPseudoKey);
-    this->menu->AddItem(close_item);
-
-    this->Add(this->menu);
-
-    for (u32 i = 0; i < this->menu->GetItems().size(); i++) {
-        const auto outline_y = menu_y + (static_cast<s32>(i) * MangaViewerLayout::MenuItemHeight) + MangaViewerLayout::MenuOutlineMarginY;
-        const auto outline_h = MangaViewerLayout::MenuItemHeight - (MangaViewerLayout::MenuOutlineMarginY * 2);
-        auto outline = RoundedOutlineRectangle::New(menu_item_x, outline_y, menu_w, outline_h, MangaViewerLayout::MenuOutlineIdleColor, MangaViewerLayout::MenuOutlineRadius, MangaViewerLayout::MenuOutlineThickness);
-        outline->SetVisible(false);
-        this->menuItemOutlines.push_back(outline);
-        this->Add(outline);
-    }
-
-    this->menu->SetOnSelectionChanged([this]() {
-        this->UpdateMenuItemOutlines();
     });
-    this->UpdateMenuItemOutlines();
 
-    this->menuFooter = pu::ui::elm::TextBlock::New(content_x, panel_y + panel_h - 56, "A Seleccionar    B Cerrar");
-    this->menuFooter->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small));
-    this->menuFooter->SetColor(MangaViewerLayout::MenuFooterTextColor);
-    this->menuFooter->SetVisible(false);
-    this->Add(this->menuFooter);
+    this->sideMenu->AddItem([]() {
+        return lang::Get("common.side_menu_close");
+    }, [this]() {
+        this->sideMenu->SetOpen(false);
+    });
 
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
-        if (keys_down & HidNpadButton_X) {
-            this->SetMenuVisible(!this->menu_open);
-            return;
-        }
-
-        if (this->menu_open) {
-            if (keys_down & HidNpadButton_B) {
-                this->SetMenuVisible(false);
-            }
+        if (this->sideMenu->HandleInput(keys_down, keys_up, keys_held, touch_pos)) {
             return;
         }
 
@@ -290,7 +223,7 @@ void MangaViewerLayout::LoadPage(const u32 index) {
     else {
         this->ApplyCurrentMode();
     }
-    this->SetPageIndicatorText(std::to_string(index + 1) + " / " + std::to_string(this->page_count));
+    this->SetPageIndicatorText(lang::Get("manga_viewer.page_indicator", {{"current", std::to_string(index + 1)}, {"total", std::to_string(this->page_count)}}));
 }
 
 void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
@@ -303,45 +236,17 @@ void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
     this->pageIndicatorBg->SetHeight(this->pageIndicator->GetHeight() + (padding * 2));
 }
 
-void MangaViewerLayout::SetMenuVisible(const bool visible) {
-    this->menu_open = visible;
-    if (visible) {
-        this->UpdateOrientationMenuItemLabel();
-    }
-    this->menuBg->SetVisible(visible);
-    this->menuTitle->SetVisible(visible);
-    this->menuDivider->SetVisible(visible);
-    this->menu->SetVisible(visible);
-    this->menuFooter->SetVisible(visible);
-    for (auto &outline : this->menuItemOutlines) {
-        outline->SetVisible(visible);
-    }
-}
-
-void MangaViewerLayout::UpdateMenuItemOutlines() {
-    const auto selected = this->menu->GetSelectedIndex();
-    for (size_t i = 0; i < this->menuItemOutlines.size(); i++) {
-        const auto is_selected = (static_cast<s32>(i) == selected);
-        this->menuItemOutlines.at(i)->SetOutlineColor(is_selected ? MangaViewerLayout::MenuOutlineFocusColor : MangaViewerLayout::MenuOutlineIdleColor);
-    }
-}
-
 std::string MangaViewerLayout::GetOrientationLabel() const {
-    return (this->orientation == ReadingOrientation::Vertical) ? "Vista: Vertical" : "Vista: Horizontal";
-}
-
-void MangaViewerLayout::UpdateOrientationMenuItemLabel() {
-    this->orientationItem->SetName(this->GetOrientationLabel());
-    this->menu->ForceReloadItems();
+    return (this->orientation == ReadingOrientation::Vertical) ? lang::Get("common.orientation_vertical") : lang::Get("common.orientation_horizontal");
 }
 
 void MangaViewerLayout::ToggleOrientation() {
     this->orientation = (this->orientation == ReadingOrientation::Vertical) ? ReadingOrientation::Horizontal : ReadingOrientation::Vertical;
     settings::SetReadingOrientation(this->orientation);
+    this->sideMenu->RefreshLabels();
     // Screen space swaps axes, so re-run the current fit mode against the
     // new logical dimensions and reset scroll, exactly like a resize.
     this->ApplyViewMode();
-    this->UpdateOrientationMenuItemLabel();
 }
 
 s32 MangaViewerLayout::GetLogicalScreenWidth() const {
