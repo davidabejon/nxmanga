@@ -107,5 +107,4 @@ class MangaViewerLayout : public pu::ui::Layout {
         RoundedRectangle::Ref pageIndicatorBg;
         pu::ui::elm::TextBlock::Ref pageIndicator;
         SideMenu::Ref sideMenu;
-        pu::ui::elm::MenuItem::Ref orientationItem;
 };

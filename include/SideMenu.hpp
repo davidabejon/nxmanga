@@ -11,21 +11,32 @@
 // Layout owns it. The owner builds one, adds its own items, and forwards
 // input to HandleInput from the very top of its own SetOnInput, so the panel
 // can claim X/B before the rest of the Layout's input handling runs.
+//
+// Also owns a built-in language-picker item, since switching language is a
+// menu-shell concern shared by every screen rather than something specific
+// to any one of them.
 class SideMenu {
     public:
         using ItemCallback = std::function<void()>;
+        // Called (again) whenever the menu needs to re-resolve an item's
+        // text, e.g. after the active language changes, so items showing
+        // translated or state-dependent text stay correct without the
+        // caller having to remember to update them by hand.
+        using LabelProvider = std::function<std::string()>;
 
-        SideMenu(pu::ui::Layout *owner, const std::string &title);
+        SideMenu(pu::ui::Layout *owner);
         PU_SMART_CTOR(SideMenu)
 
         // Adds an item, firing on_selected on both the A button and touch
-        // taps. Returns the created MenuItem so callers needing to change
-        // its label later (e.g. a toggle showing the current setting) can.
-        pu::ui::elm::MenuItem::Ref AddItem(const std::string &name, ItemCallback on_selected);
+        // taps. Returns the created MenuItem, mostly useful for tests/debug
+        // since label refreshes are handled internally via RefreshLabels.
+        pu::ui::elm::MenuItem::Ref AddItem(LabelProvider get_label, ItemCallback on_selected);
 
-        // Renames an item previously returned by AddItem and refreshes its
-        // rendered text.
-        void SetItemName(pu::ui::elm::MenuItem::Ref &item, const std::string &name);
+        // Re-resolves the title, footer, language item, and every item
+        // added via AddItem by calling their LabelProvider again. Call
+        // after anything that could change one of those labels (a language
+        // switch, or a caller's own item toggling some setting).
+        void RefreshLabels();
 
         inline bool IsOpen() const {
             return this->open;
@@ -56,6 +67,8 @@ class SideMenu {
         static constexpr pu::ui::Color OutlineFocusColor = pu::ui::Color(120, 200, 255, 0xFF);
 
         void UpdateItemOutlines();
+        std::string GetLanguageItemLabel() const;
+        void CycleLanguage();
 
         pu::ui::Layout *owner;
         bool open;
@@ -68,4 +81,5 @@ class SideMenu {
         pu::ui::elm::Menu::Ref menu;
         pu::ui::elm::TextBlock::Ref footer;
         std::vector<RoundedOutlineRectangle::Ref> itemOutlines;
+        std::vector<LabelProvider> itemLabelProviders;
 };

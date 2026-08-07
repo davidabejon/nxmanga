@@ -1,7 +1,17 @@
 #include <MainApplication.hpp>
 #include <manga/MangaSource.hpp>
+#include <Settings.hpp>
+#include <Lang.hpp>
 
 void MainApplication::OnLoad() {
+    // Apply a previously chosen language before building any layout, so the
+    // very first screen already renders in it. An empty setting means the
+    // user never picked one, so lang keeps whatever default it started with.
+    const auto saved_language = settings::GetLanguage();
+    if (!saved_language.empty()) {
+        lang::SetLanguage(saved_language);
+    }
+
     this->ShowMangaList(MainApplication::MangaRootPath, nullptr);
 
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {

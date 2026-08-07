@@ -1,6 +1,7 @@
 #include <MangaListLayout.hpp>
 #include <FsUtils.hpp>
 #include <manga/MangaSource.hpp>
+#include <Lang.hpp>
 
 namespace {
 
@@ -21,7 +22,7 @@ namespace {
 }
 
 MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout(), manga_root(manga_root), pending_index(0) {
-    this->titleText = pu::ui::elm::TextBlock::New(75, 30, "nxmanga");
+    this->titleText = pu::ui::elm::TextBlock::New(75, 30, lang::Get("app_title"));
     this->titleText->SetColor(pu::ui::Color(20, 20, 20, 0xFF));
     this->Add(this->titleText);
 
@@ -37,7 +38,7 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
     this->spinner = LoadingSpinner::New((screen_w / 2) - SpinnerRadius, (screen_h / 2) - SpinnerRadius - 30, SpinnerRadius);
     this->Add(this->spinner);
 
-    this->loadingText = pu::ui::elm::TextBlock::New(0, (screen_h / 2) + SpinnerRadius - 10, "Cargando...");
+    this->loadingText = pu::ui::elm::TextBlock::New(0, (screen_h / 2) + SpinnerRadius - 10, lang::Get("common.loading"));
     this->loadingText->SetColor(pu::ui::Color(20, 20, 20, 0xFF));
     this->loadingText->SetX((screen_w - this->loadingText->GetWidth()) / 2);
     this->Add(this->loadingText);
@@ -64,7 +65,7 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
     });
 
     if (this->pending_paths.empty()) {
-        this->titleText->SetText("No se encontraron mangas en " + this->manga_root);
+        this->titleText->SetText(lang::Get("manga_list.no_mangas_found", {{"path", this->manga_root}}));
         this->spinner->SetVisible(false);
         this->loadingText->SetVisible(false);
     }
@@ -74,15 +75,19 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
         });
     }
 
-    this->sideMenu = SideMenu::New(this, "Opciones");
+    this->sideMenu = SideMenu::New(this);
 
-    this->orientationItem = this->sideMenu->AddItem(this->GetOrientationLabel(), [this]() {
+    this->sideMenu->AddItem([this]() {
+        return this->GetOrientationLabel();
+    }, [this]() {
         const auto orientation = (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? settings::ReadingOrientation::Horizontal : settings::ReadingOrientation::Vertical;
         settings::SetReadingOrientation(orientation);
-        this->sideMenu->SetItemName(this->orientationItem, this->GetOrientationLabel());
+        this->sideMenu->RefreshLabels();
     });
 
-    this->sideMenu->AddItem("Cerrar menu", [this]() {
+    this->sideMenu->AddItem([]() {
+        return lang::Get("common.side_menu_close");
+    }, [this]() {
         this->sideMenu->SetOpen(false);
     });
 
@@ -102,7 +107,7 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
 }
 
 std::string MangaListLayout::GetOrientationLabel() const {
-    return (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? "Vista: Vertical" : "Vista: Horizontal";
+    return (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? lang::Get("common.orientation_vertical") : lang::Get("common.orientation_horizontal");
 }
 
 void MangaListLayout::LoadNextPendingCover() {

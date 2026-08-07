@@ -46,5 +46,4 @@ class MangaListLayout : public pu::ui::Layout {
         std::vector<std::string> pending_names;
         size_t pending_index;
         SideMenu::Ref sideMenu;
-        pu::ui::elm::MenuItem::Ref orientationItem;
 };

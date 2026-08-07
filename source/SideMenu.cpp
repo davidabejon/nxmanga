@@ -1,6 +1,8 @@
 #include <SideMenu.hpp>
+#include <Lang.hpp>
+#include <Settings.hpp>
 
-SideMenu::SideMenu(pu::ui::Layout *owner, const std::string &title) : owner(owner), open(false) {
+SideMenu::SideMenu(pu::ui::Layout *owner) : owner(owner), open(false) {
     const auto screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
     const auto screen_h = static_cast<s32>(pu::ui::render::ScreenHeight);
 
@@ -14,7 +16,7 @@ SideMenu::SideMenu(pu::ui::Layout *owner, const std::string &title) : owner(owne
     this->bg->SetVisible(false);
     this->owner->Add(this->bg);
 
-    this->titleText = pu::ui::elm::TextBlock::New(content_x, panel_y + 28, title);
+    this->titleText = pu::ui::elm::TextBlock::New(content_x, panel_y + 28, lang::Get("common.side_menu_title"));
     this->titleText->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large));
     this->titleText->SetColor(SideMenu::ItemTextColor);
     this->titleText->SetVisible(false);
@@ -36,15 +38,24 @@ SideMenu::SideMenu(pu::ui::Layout *owner, const std::string &title) : owner(owne
     });
     this->owner->Add(this->menu);
 
-    this->footer = pu::ui::elm::TextBlock::New(content_x, panel_y + panel_h - 56, "A Seleccionar    B Cerrar");
+    this->footer = pu::ui::elm::TextBlock::New(content_x, panel_y + panel_h - 56, lang::Get("common.side_menu_footer"));
     this->footer->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small));
     this->footer->SetColor(SideMenu::FooterTextColor);
     this->footer->SetVisible(false);
     this->owner->Add(this->footer);
+
+    // Only worth showing if there's actually something to switch to.
+    if (lang::GetAvailableLanguages().size() >= 2) {
+        this->AddItem([this]() {
+            return this->GetLanguageItemLabel();
+        }, [this]() {
+            this->CycleLanguage();
+        });
+    }
 }
 
-pu::ui::elm::MenuItem::Ref SideMenu::AddItem(const std::string &name, ItemCallback on_selected) {
-    auto item = pu::ui::elm::MenuItem::New(name);
+pu::ui::elm::MenuItem::Ref SideMenu::AddItem(LabelProvider get_label, ItemCallback on_selected) {
+    auto item = pu::ui::elm::MenuItem::New(get_label());
     item->SetColor(SideMenu::ItemTextColor);
     // Menu distinguishes the A button from a touch tap release internally
     // (pu::ui::TouchPseudoKey), so the callback has to be registered for
@@ -53,6 +64,7 @@ pu::ui::elm::MenuItem::Ref SideMenu::AddItem(const std::string &name, ItemCallba
     item->AddOnKey(on_selected, pu::ui::TouchPseudoKey);
     this->menu->AddItem(item);
     this->menu->SetNumberOfItemsToShow(static_cast<s32>(this->menu->GetItems().size()));
+    this->itemLabelProviders.push_back(get_label);
 
     const auto index = this->menu->GetItems().size() - 1;
     const auto outline_y = this->menu_y + (static_cast<s32>(index) * SideMenu::ItemHeight) + SideMenu::OutlineMarginY;
@@ -65,9 +77,39 @@ pu::ui::elm::MenuItem::Ref SideMenu::AddItem(const std::string &name, ItemCallba
     return item;
 }
 
-void SideMenu::SetItemName(pu::ui::elm::MenuItem::Ref &item, const std::string &name) {
-    item->SetName(name);
+void SideMenu::RefreshLabels() {
+    this->titleText->SetText(lang::Get("common.side_menu_title"));
+    this->footer->SetText(lang::Get("common.side_menu_footer"));
+
+    auto &menu_items = this->menu->GetItems();
+    for (size_t i = 0; i < menu_items.size(); i++) {
+        menu_items.at(i)->SetName(this->itemLabelProviders.at(i)());
+    }
     this->menu->ForceReloadItems();
+}
+
+std::string SideMenu::GetLanguageItemLabel() const {
+    return lang::Get("language_name");
+}
+
+void SideMenu::CycleLanguage() {
+    const auto languages = lang::GetAvailableLanguages();
+    if (languages.empty()) {
+        return;
+    }
+
+    const auto current = lang::GetLanguage();
+    size_t next_index = 0;
+    for (size_t i = 0; i < languages.size(); i++) {
+        if (languages.at(i) == current) {
+            next_index = (i + 1) % languages.size();
+            break;
+        }
+    }
+
+    lang::SetLanguage(languages.at(next_index));
+    settings::SetLanguage(languages.at(next_index));
+    this->RefreshLabels();
 }
 
 void SideMenu::UpdateItemOutlines() {

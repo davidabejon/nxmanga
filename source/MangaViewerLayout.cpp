@@ -1,4 +1,5 @@
 #include <MangaViewerLayout.hpp>
+#include <Lang.hpp>
 #include <cmath>
 
 MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
@@ -12,26 +13,32 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         this->LoadPage(0);
     }
     else {
-        this->SetPageIndicatorText("Sin imagenes");
+        this->SetPageIndicatorText(lang::Get("manga_viewer.no_images"));
     }
 
     this->Add(this->pageIndicatorBg);
     this->Add(this->pageIndicator);
 
-    this->sideMenu = SideMenu::New(this, "Opciones");
+    this->sideMenu = SideMenu::New(this);
 
-    this->orientationItem = this->sideMenu->AddItem(this->GetOrientationLabel(), [this]() {
+    this->sideMenu->AddItem([this]() {
+        return this->GetOrientationLabel();
+    }, [this]() {
         this->ToggleOrientation();
     });
 
-    this->sideMenu->AddItem("Volver a la lista", [this]() {
+    this->sideMenu->AddItem([]() {
+        return lang::Get("manga_viewer.back_to_list");
+    }, [this]() {
         this->sideMenu->SetOpen(false);
         if (this->on_back) {
             this->on_back();
         }
     });
 
-    this->sideMenu->AddItem("Cerrar menu", [this]() {
+    this->sideMenu->AddItem([]() {
+        return lang::Get("common.side_menu_close");
+    }, [this]() {
         this->sideMenu->SetOpen(false);
     });
 
@@ -216,7 +223,7 @@ void MangaViewerLayout::LoadPage(const u32 index) {
     else {
         this->ApplyCurrentMode();
     }
-    this->SetPageIndicatorText(std::to_string(index + 1) + " / " + std::to_string(this->page_count));
+    this->SetPageIndicatorText(lang::Get("manga_viewer.page_indicator", {{"current", std::to_string(index + 1)}, {"total", std::to_string(this->page_count)}}));
 }
 
 void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
@@ -230,13 +237,13 @@ void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
 }
 
 std::string MangaViewerLayout::GetOrientationLabel() const {
-    return (this->orientation == ReadingOrientation::Vertical) ? "Vista: Vertical" : "Vista: Horizontal";
+    return (this->orientation == ReadingOrientation::Vertical) ? lang::Get("common.orientation_vertical") : lang::Get("common.orientation_horizontal");
 }
 
 void MangaViewerLayout::ToggleOrientation() {
     this->orientation = (this->orientation == ReadingOrientation::Vertical) ? ReadingOrientation::Horizontal : ReadingOrientation::Vertical;
     settings::SetReadingOrientation(this->orientation);
-    this->sideMenu->SetItemName(this->orientationItem, this->GetOrientationLabel());
+    this->sideMenu->RefreshLabels();
     // Screen space swaps axes, so re-run the current fit mode against the
     // new logical dimensions and reset scroll, exactly like a resize.
     this->ApplyViewMode();
