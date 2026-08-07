@@ -1,6 +1,7 @@
 #include <manga/MangaSource.hpp>
 #include <manga/DirectoryMangaSource.hpp>
 #include <manga/CbzMangaSource.hpp>
+#include <manga/CoverCache.hpp>
 #include <FsUtils.hpp>
 #include <unordered_map>
 
@@ -64,21 +65,31 @@ namespace manga {
     }
 
     std::vector<uint8_t> GetCoverImage(const std::string &path) {
-        if (IsLeafManga(path)) {
-            auto source = OpenMangaSource(path);
-            if ((source == nullptr) || (source->GetPageCount() == 0)) {
-                return {};
-            }
-            return source->ReadPage(0);
+        auto cached = GetCachedCover(path);
+        if (!cached.empty()) {
+            return cached;
         }
 
-        for (const auto &name : ListMangaEntries(path)) {
-            auto cover = GetCoverImage(path + "/" + name);
-            if (!cover.empty()) {
-                return cover;
+        std::vector<uint8_t> cover;
+        if (IsLeafManga(path)) {
+            auto source = OpenMangaSource(path);
+            if ((source != nullptr) && (source->GetPageCount() > 0)) {
+                cover = source->ReadPage(0);
             }
         }
-        return {};
+        else {
+            for (const auto &name : ListMangaEntries(path)) {
+                cover = GetCoverImage(path + "/" + name);
+                if (!cover.empty()) {
+                    break;
+                }
+            }
+        }
+
+        if (!cover.empty()) {
+            SetCachedCover(path, cover);
+        }
+        return cover;
     }
 
 }
