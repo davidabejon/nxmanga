@@ -1,7 +1,7 @@
 #include <MangaViewerLayout.hpp>
 #include <cmath>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(ReadingOrientation::Horizontal), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
@@ -46,8 +46,15 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
     const auto menu_w = panel_w - (MangaViewerLayout::MenuItemsInset * 2);
     const auto menu_item_x = panel_x + MangaViewerLayout::MenuItemsInset;
 
-    this->menu = pu::ui::elm::Menu::New(menu_item_x, menu_y, menu_w, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuItemHeight, 2);
+    this->menu = pu::ui::elm::Menu::New(menu_item_x, menu_y, menu_w, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuItemHeight, 3);
     this->menu->SetVisible(false);
+
+    this->orientationItem = pu::ui::elm::MenuItem::New(this->GetOrientationLabel());
+    this->orientationItem->SetColor(MangaViewerLayout::MenuItemTextColor);
+    this->orientationItem->AddOnKey([this]() {
+        this->ToggleOrientation();
+    });
+    this->menu->AddItem(this->orientationItem);
 
     auto back_item = pu::ui::elm::MenuItem::New("Volver a la lista");
     back_item->SetColor(MangaViewerLayout::MenuItemTextColor);
@@ -130,28 +137,35 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         this->pinch_active = false;
 
         if (!touch_pos.IsEmpty()) {
+            // Remap the raw (real, never-rotated) touch point into logical
+            // coordinates before doing anything else, so every check below
+            // (drag deltas, tap zones) can stay written as if the console
+            // were always held in Horizontal orientation.
+            const auto touch_x = this->ToLogicalTouchX(touch_pos.x, touch_pos.y);
+            const auto touch_y = this->ToLogicalTouchY(touch_pos.x, touch_pos.y);
+
             if (!this->touch_active) {
                 this->touch_active = true;
                 // If this finger is the tail end of a pinch (the other one
                 // lifted a frame earlier), don't treat its eventual release
                 // as a fresh tap.
                 this->touch_moved = this->touch_had_multitouch;
-                this->touch_start_x = touch_pos.x;
-                this->touch_start_y = touch_pos.y;
-                this->touch_last_x = touch_pos.x;
-                this->touch_last_y = touch_pos.y;
+                this->touch_start_x = touch_x;
+                this->touch_start_y = touch_y;
+                this->touch_last_x = touch_x;
+                this->touch_last_y = touch_y;
             }
             else {
-                const auto delta_x = touch_pos.x - this->touch_last_x;
-                const auto delta_y = touch_pos.y - this->touch_last_y;
+                const auto delta_x = touch_x - this->touch_last_x;
+                const auto delta_y = touch_y - this->touch_last_y;
                 if ((delta_x != 0) || (delta_y != 0)) {
                     this->SetScroll(this->scroll_x - delta_x, this->scroll_y - delta_y);
-                    this->touch_last_x = touch_pos.x;
-                    this->touch_last_y = touch_pos.y;
+                    this->touch_last_x = touch_x;
+                    this->touch_last_y = touch_y;
                 }
 
-                const auto total_dx = touch_pos.x - this->touch_start_x;
-                const auto total_dy = touch_pos.y - this->touch_start_y;
+                const auto total_dx = touch_x - this->touch_start_x;
+                const auto total_dy = touch_y - this->touch_start_y;
                 const auto abs_dx = (total_dx < 0) ? -total_dx : total_dx;
                 const auto abs_dy = (total_dy < 0) ? -total_dy : total_dy;
                 if ((abs_dx >= MangaViewerLayout::TapMoveTolerance) || (abs_dy >= MangaViewerLayout::TapMoveTolerance)) {
@@ -164,7 +178,7 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         if (this->touch_active) {
             this->touch_active = false;
             if (!this->touch_moved) {
-                const auto screen_mid_x = static_cast<s32>(pu::ui::render::ScreenWidth) / 2;
+                const auto screen_mid_x = this->GetLogicalScreenWidth() / 2;
                 if (this->touch_start_x < screen_mid_x) {
                     if (this->current_page > 0) {
                         this->LoadPage(this->current_page - 1);
@@ -285,6 +299,9 @@ void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
 
 void MangaViewerLayout::SetMenuVisible(const bool visible) {
     this->menu_open = visible;
+    if (visible) {
+        this->UpdateOrientationMenuItemLabel();
+    }
     this->menuBg->SetVisible(visible);
     this->menuTitle->SetVisible(visible);
     this->menuDivider->SetVisible(visible);
@@ -303,24 +320,65 @@ void MangaViewerLayout::UpdateMenuItemOutlines() {
     }
 }
 
+std::string MangaViewerLayout::GetOrientationLabel() const {
+    return (this->orientation == ReadingOrientation::Vertical) ? "Vista: Vertical" : "Vista: Horizontal";
+}
+
+void MangaViewerLayout::UpdateOrientationMenuItemLabel() {
+    this->orientationItem->SetName(this->GetOrientationLabel());
+    this->menu->ForceReloadItems();
+}
+
+void MangaViewerLayout::ToggleOrientation() {
+    this->orientation = (this->orientation == ReadingOrientation::Vertical) ? ReadingOrientation::Horizontal : ReadingOrientation::Vertical;
+    // Screen space swaps axes, so re-run the current fit mode against the
+    // new logical dimensions and reset scroll, exactly like a resize.
+    this->ApplyViewMode();
+    this->UpdateOrientationMenuItemLabel();
+}
+
+s32 MangaViewerLayout::GetLogicalScreenWidth() const {
+    return (this->orientation == ReadingOrientation::Vertical) ? static_cast<s32>(pu::ui::render::ScreenHeight) : static_cast<s32>(pu::ui::render::ScreenWidth);
+}
+
+s32 MangaViewerLayout::GetLogicalScreenHeight() const {
+    return (this->orientation == ReadingOrientation::Vertical) ? static_cast<s32>(pu::ui::render::ScreenWidth) : static_cast<s32>(pu::ui::render::ScreenHeight);
+}
+
+s32 MangaViewerLayout::ToLogicalTouchX(const s32 real_x, const s32 real_y) const {
+    if (this->orientation == ReadingOrientation::Vertical) {
+        return real_y;
+    }
+    return real_x;
+}
+
+s32 MangaViewerLayout::ToLogicalTouchY(const s32 real_x, const s32 real_y) const {
+    if (this->orientation == ReadingOrientation::Vertical) {
+        return static_cast<s32>(pu::ui::render::ScreenWidth) - real_x;
+    }
+    return real_y;
+}
+
 void MangaViewerLayout::ApplyViewMode() {
     if ((this->pageImage == nullptr) || (this->tex_width <= 0) || (this->tex_height <= 0)) {
         return;
     }
 
+    const auto logical_screen_w = this->GetLogicalScreenWidth();
+    const auto logical_screen_h = this->GetLogicalScreenHeight();
+
     switch (this->mode) {
         case ViewMode::Vertical: {
-            this->target_size = static_cast<s32>(pu::ui::render::ScreenWidth);
+            this->target_size = logical_screen_w;
             break;
         }
         case ViewMode::Intermediate: {
-            const auto full_width = static_cast<s32>(pu::ui::render::ScreenWidth);
-            const auto fit_height_width = static_cast<s32>((static_cast<double>(this->tex_width) * pu::ui::render::ScreenHeight) / this->tex_height);
-            this->target_size = (full_width + fit_height_width) / 2;
+            const auto fit_height_width = static_cast<s32>((static_cast<double>(this->tex_width) * logical_screen_h) / this->tex_height);
+            this->target_size = (logical_screen_w + fit_height_width) / 2;
             break;
         }
         case ViewMode::Horizontal: {
-            this->target_size = static_cast<s32>(pu::ui::render::ScreenHeight);
+            this->target_size = logical_screen_h;
             break;
         }
     }
@@ -354,26 +412,31 @@ void MangaViewerLayout::ApplyHeightMode(const s32 height) {
 }
 
 void MangaViewerLayout::ApplyDimensions(const s32 width, const s32 height) {
-    this->pageImage->SetWidth(width);
-    this->pageImage->SetHeight(height);
+    this->image_width = width;
+    this->image_height = height;
 
-    this->max_scroll_x = width - static_cast<s32>(pu::ui::render::ScreenWidth);
+    const auto logical_screen_w = this->GetLogicalScreenWidth();
+    const auto logical_screen_h = this->GetLogicalScreenHeight();
+
+    this->max_scroll_x = width - logical_screen_w;
     if (this->max_scroll_x < 0) {
-        this->center_offset_x = (static_cast<s32>(pu::ui::render::ScreenWidth) - width) / 2;
+        this->center_offset_x = (logical_screen_w - width) / 2;
         this->max_scroll_x = 0;
     }
     else {
         this->center_offset_x = 0;
     }
 
-    this->max_scroll_y = height - static_cast<s32>(pu::ui::render::ScreenHeight);
+    this->max_scroll_y = height - logical_screen_h;
     if (this->max_scroll_y < 0) {
-        this->center_offset_y = (static_cast<s32>(pu::ui::render::ScreenHeight) - height) / 2;
+        this->center_offset_y = (logical_screen_h - height) / 2;
         this->max_scroll_y = 0;
     }
     else {
         this->center_offset_y = 0;
     }
+
+    this->UpdateImageTransform();
 }
 
 void MangaViewerLayout::AdjustZoom(const s32 delta) {
@@ -382,7 +445,7 @@ void MangaViewerLayout::AdjustZoom(const s32 delta) {
     }
 
     const auto is_height_based = (this->mode == ViewMode::Horizontal);
-    const auto screen_size = is_height_based ? static_cast<s32>(pu::ui::render::ScreenHeight) : static_cast<s32>(pu::ui::render::ScreenWidth);
+    const auto screen_size = is_height_based ? this->GetLogicalScreenHeight() : this->GetLogicalScreenWidth();
 
     const auto min_size = static_cast<s32>(screen_size * MangaViewerLayout::MinZoomFraction);
     const auto max_size = static_cast<s32>(screen_size * MangaViewerLayout::MaxZoomFraction);
@@ -425,10 +488,43 @@ void MangaViewerLayout::SetScroll(const s32 x, const s32 y) {
 
     this->scroll_x = clamped_x;
     this->scroll_y = clamped_y;
+    this->UpdateImageTransform();
+}
+
+void MangaViewerLayout::UpdateImageTransform() {
     if (this->pageImage == nullptr) {
         return;
     }
 
-    this->pageImage->SetX(this->center_offset_x - this->scroll_x);
-    this->pageImage->SetY(this->center_offset_y - this->scroll_y);
+    const auto logical_x = this->center_offset_x - this->scroll_x;
+    const auto logical_y = this->center_offset_y - this->scroll_y;
+
+    if (this->orientation == ReadingOrientation::Vertical) {
+        // pageImage is drawn rotated clockwise on the real (never-rotated)
+        // screen; read it by turning the console counter-clockwise, like a
+        // book. SDL first stretches the whole texture into the rect we give
+        // it, THEN rotates that rect about its own center — so the rect must
+        // keep image_width/image_height as-is (already the correct aspect
+        // ratio) or the stretch step distorts the page before it's ever
+        // rotated. The swapped on-screen footprint falls out of rotating a
+        // non-square rect; it needs no manual width/height swap here.
+        const auto real_screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
+        const auto logical_center_x = logical_x + (this->image_width / 2);
+        const auto logical_center_y = logical_y + (this->image_height / 2);
+        const auto real_center_x = real_screen_w - logical_center_y;
+        const auto real_center_y = logical_center_x;
+
+        this->pageImage->SetWidth(this->image_width);
+        this->pageImage->SetHeight(this->image_height);
+        this->pageImage->SetX(real_center_x - (this->image_width / 2));
+        this->pageImage->SetY(real_center_y - (this->image_height / 2));
+        this->pageImage->SetRotationAngle(MangaViewerLayout::PortraitRotationAngle);
+    }
+    else {
+        this->pageImage->SetWidth(this->image_width);
+        this->pageImage->SetHeight(this->image_height);
+        this->pageImage->SetX(logical_x);
+        this->pageImage->SetY(logical_y);
+        this->pageImage->SetRotationAngle(0.0f);
+    }
 }
