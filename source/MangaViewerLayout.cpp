@@ -51,26 +51,32 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
 
     this->orientationItem = pu::ui::elm::MenuItem::New(this->GetOrientationLabel());
     this->orientationItem->SetColor(MangaViewerLayout::MenuItemTextColor);
-    this->orientationItem->AddOnKey([this]() {
+    const auto orientation_cb = [this]() {
         this->ToggleOrientation();
-    });
+    };
+    this->orientationItem->AddOnKey(orientation_cb);
+    this->orientationItem->AddOnKey(orientation_cb, pu::ui::TouchPseudoKey);
     this->menu->AddItem(this->orientationItem);
 
     auto back_item = pu::ui::elm::MenuItem::New("Volver a la lista");
     back_item->SetColor(MangaViewerLayout::MenuItemTextColor);
-    back_item->AddOnKey([this]() {
+    const auto back_cb = [this]() {
         this->SetMenuVisible(false);
         if (this->on_back) {
             this->on_back();
         }
-    });
+    };
+    back_item->AddOnKey(back_cb);
+    back_item->AddOnKey(back_cb, pu::ui::TouchPseudoKey);
     this->menu->AddItem(back_item);
 
     auto close_item = pu::ui::elm::MenuItem::New("Cerrar menu");
     close_item->SetColor(MangaViewerLayout::MenuItemTextColor);
-    close_item->AddOnKey([this]() {
+    const auto close_cb = [this]() {
         this->SetMenuVisible(false);
-    });
+    };
+    close_item->AddOnKey(close_cb);
+    close_item->AddOnKey(close_cb, pu::ui::TouchPseudoKey);
     this->menu->AddItem(close_item);
 
     this->Add(this->menu);
