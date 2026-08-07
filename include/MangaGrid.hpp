@@ -76,6 +76,8 @@ class MangaGrid : public pu::ui::elm::Element {
         static constexpr pu::ui::Color CardColor = pu::ui::Color(230, 230, 230, 0xFF);
         static constexpr pu::ui::Color FocusOutlineColor = pu::ui::Color(30, 100, 200, 0xFF);
         static constexpr pu::ui::Color TitleColor = pu::ui::Color(20, 20, 20, 0xFF);
+        static constexpr pu::ui::Color ThumbnailPlaceholderColor = pu::ui::Color(200, 200, 200, 0xFF);
+        static constexpr pu::ui::Color ThumbnailPlaceholderMarkColor = pu::ui::Color(130, 130, 130, 0xFF);
 
         // Maximum finger movement, in pixels, still considered a tap rather
         // than the start of a drag.
@@ -93,7 +95,7 @@ class MangaGrid : public pu::ui::elm::Element {
         void EnsureSelectedVisible();
         void ScrollBy(const s32 delta_y);
         void ResetCardMarquee(const size_t index);
-        static void RenderThumbnailCover(pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h);
+        static void RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h);
         void HandleTap(const s32 touch_x, const s32 touch_y);
 
         s32 x;

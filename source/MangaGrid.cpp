@@ -199,7 +199,7 @@ void MangaGrid::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, con
             drawer->RenderRoundedRectangleFill(MangaGrid::CardColor, card_x, card_y, card_w, card_h, MangaGrid::CardRadius);
 
             const auto margin = MangaGrid::CardFrameMargin;
-            MangaGrid::RenderThumbnailCover(card.thumbnail, card_x + margin, card_y + margin, card_w - (margin * 2), thumbnail_h - (margin * 2));
+            MangaGrid::RenderThumbnailCover(drawer, card.thumbnail, card_x + margin, card_y + margin, card_w - (margin * 2), thumbnail_h - (margin * 2));
 
             const auto title_area_w = card_w - (MangaGrid::TitleHorizontalPadding * 2);
             const auto full_title_w = (card.full_title_tex != nullptr) ? pu::ui::render::GetTextureWidth(card.full_title_tex->Get()) : 0;
@@ -245,8 +245,23 @@ void MangaGrid::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, con
     SDL_RenderSetClipRect(renderer, nullptr);
 }
 
-void MangaGrid::RenderThumbnailCover(pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h) {
-    if ((thumbnail == nullptr) || (w <= 0) || (h <= 0)) {
+void MangaGrid::RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h) {
+    if ((w <= 0) || (h <= 0)) {
+        return;
+    }
+
+    if (thumbnail == nullptr) {
+        drawer->RenderRectangleFill(MangaGrid::ThumbnailPlaceholderColor, x, y, w, h);
+
+        static pu::sdl2::TextureHandle::Ref mark_tex = nullptr;
+        if (mark_tex == nullptr) {
+            mark_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large), "?", MangaGrid::ThumbnailPlaceholderMarkColor));
+        }
+
+        const auto tex = mark_tex->Get();
+        const auto mark_w = pu::ui::render::GetTextureWidth(tex);
+        const auto mark_h = pu::ui::render::GetTextureHeight(tex);
+        drawer->RenderTexture(tex, x + ((w - mark_w) / 2), y + ((h - mark_h) / 2));
         return;
     }
 
@@ -320,16 +335,16 @@ void MangaGrid::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_h
         return;
     }
 
-    if (keys_down & HidNpadButton_Right) {
+    if (keys_down & (HidNpadButton_Right | HidNpadButton_StickLRight)) {
         this->MoveSelection(1);
     }
-    else if (keys_down & HidNpadButton_Left) {
+    else if (keys_down & (HidNpadButton_Left | HidNpadButton_StickLLeft)) {
         this->MoveSelection(-1);
     }
-    else if (keys_down & HidNpadButton_Down) {
+    else if (keys_down & (HidNpadButton_Down | HidNpadButton_StickLDown)) {
         this->MoveSelection(this->columns);
     }
-    else if (keys_down & HidNpadButton_Up) {
+    else if (keys_down & (HidNpadButton_Up | HidNpadButton_StickLUp)) {
         this->MoveSelection(-this->columns);
     }
     else if (keys_down & HidNpadButton_A) {
