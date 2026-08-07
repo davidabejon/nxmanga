@@ -4,6 +4,7 @@
 #include <RoundedRectangle.hpp>
 #include <RoundedOutlineRectangle.hpp>
 #include <manga/MangaSource.hpp>
+#include <Settings.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -26,6 +27,13 @@ class MangaViewerLayout : public pu::ui::Layout {
             Horizontal
         };
 
+        // Reading orientation, independent of ViewMode's fit-to-width/height
+        // modes above. Horizontal is the console held normally, exactly as
+        // it works today. Vertical rotates the page 90 degrees so it fills
+        // the screen like an e-book, held with the console turned on its
+        // side. Persisted via Settings, so it carries over between mangas.
+        using ReadingOrientation = settings::ReadingOrientation;
+
         static constexpr s32 ScrollSpeed = 25;
         static constexpr s32 ZoomSpeed = 10;
         static constexpr double MinZoomFraction = 0.3;
@@ -38,6 +46,9 @@ class MangaViewerLayout : public pu::ui::Layout {
         // How much target_size changes per pixel of change in the distance
         // between the two pinching fingers.
         static constexpr double PinchZoomSensitivity = 1.0;
+        // Clockwise rotation, in degrees, applied to the page image in
+        // ReadingOrientation::Vertical.
+        static constexpr float PortraitRotationAngle = 90.0f;
 
         static constexpr s32 MenuPanelWidth = 460;
         static constexpr s32 MenuPanelMargin = 24;
@@ -66,14 +77,33 @@ class MangaViewerLayout : public pu::ui::Layout {
         void SetPageIndicatorText(const std::string &text);
         void SetMenuVisible(const bool visible);
         void UpdateMenuItemOutlines();
+        void ToggleOrientation();
+        void UpdateOrientationMenuItemLabel();
+        std::string GetOrientationLabel() const;
+        // Positions/sizes/rotates pageImage on the real (never-rotated)
+        // screen from the logical width/height/scroll/center-offset state
+        // below, which are always expressed as if orientation were
+        // Horizontal.
+        void UpdateImageTransform();
+        s32 GetLogicalScreenWidth() const;
+        s32 GetLogicalScreenHeight() const;
+        // Converts a real touch point into the logical coordinate space, so
+        // drag and tap handling stay orientation-agnostic.
+        s32 ToLogicalTouchX(const s32 real_x, const s32 real_y) const;
+        s32 ToLogicalTouchY(const s32 real_x, const s32 real_y) const;
 
         manga::MangaSourcePtr source;
         size_t page_count;
         u32 current_page;
         ViewMode mode;
+        ReadingOrientation orientation;
         s32 tex_width;
         s32 tex_height;
         s32 target_size;
+        // Logical (orientation-agnostic) size of the currently displayed
+        // image, i.e. as if orientation were Horizontal.
+        s32 image_width;
+        s32 image_height;
         s32 scroll_x;
         s32 scroll_y;
         s32 max_scroll_x;
@@ -101,6 +131,7 @@ class MangaViewerLayout : public pu::ui::Layout {
         pu::ui::elm::TextBlock::Ref menuTitle;
         pu::ui::elm::Rectangle::Ref menuDivider;
         pu::ui::elm::Menu::Ref menu;
+        pu::ui::elm::MenuItem::Ref orientationItem;
         pu::ui::elm::TextBlock::Ref menuFooter;
         std::vector<RoundedOutlineRectangle::Ref> menuItemOutlines;
 };
