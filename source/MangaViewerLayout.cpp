@@ -1,6 +1,7 @@
 #include <MangaViewerLayout.hpp>
+#include <cmath>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
@@ -98,6 +99,88 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
                 this->SetMenuVisible(false);
             }
             return;
+        }
+
+        // pu::ui only surfaces a single touch point through touch_pos, so
+        // detecting a second finger (for pinch-to-zoom) needs the raw HID
+        // touch state directly.
+        HidTouchScreenState raw_touch_state = {};
+        hidGetTouchScreenStates(&raw_touch_state, 1);
+
+        if (raw_touch_state.count >= 2) {
+            this->touch_active = false;
+            this->touch_had_multitouch = true;
+
+            const auto x0 = raw_touch_state.touches[0].x * pu::ui::render::ScreenFactor;
+            const auto y0 = raw_touch_state.touches[0].y * pu::ui::render::ScreenFactor;
+            const auto x1 = raw_touch_state.touches[1].x * pu::ui::render::ScreenFactor;
+            const auto y1 = raw_touch_state.touches[1].y * pu::ui::render::ScreenFactor;
+            const auto dx = x1 - x0;
+            const auto dy = y1 - y0;
+            const auto distance = std::sqrt((dx * dx) + (dy * dy));
+
+            if (this->pinch_active) {
+                const auto delta = distance - this->pinch_last_distance;
+                this->AdjustZoom(static_cast<s32>(delta * MangaViewerLayout::PinchZoomSensitivity));
+            }
+            this->pinch_active = true;
+            this->pinch_last_distance = distance;
+            return;
+        }
+        this->pinch_active = false;
+
+        if (!touch_pos.IsEmpty()) {
+            if (!this->touch_active) {
+                this->touch_active = true;
+                // If this finger is the tail end of a pinch (the other one
+                // lifted a frame earlier), don't treat its eventual release
+                // as a fresh tap.
+                this->touch_moved = this->touch_had_multitouch;
+                this->touch_start_x = touch_pos.x;
+                this->touch_start_y = touch_pos.y;
+                this->touch_last_x = touch_pos.x;
+                this->touch_last_y = touch_pos.y;
+            }
+            else {
+                const auto delta_x = touch_pos.x - this->touch_last_x;
+                const auto delta_y = touch_pos.y - this->touch_last_y;
+                if ((delta_x != 0) || (delta_y != 0)) {
+                    this->SetScroll(this->scroll_x - delta_x, this->scroll_y - delta_y);
+                    this->touch_last_x = touch_pos.x;
+                    this->touch_last_y = touch_pos.y;
+                }
+
+                const auto total_dx = touch_pos.x - this->touch_start_x;
+                const auto total_dy = touch_pos.y - this->touch_start_y;
+                const auto abs_dx = (total_dx < 0) ? -total_dx : total_dx;
+                const auto abs_dy = (total_dy < 0) ? -total_dy : total_dy;
+                if ((abs_dx >= MangaViewerLayout::TapMoveTolerance) || (abs_dy >= MangaViewerLayout::TapMoveTolerance)) {
+                    this->touch_moved = true;
+                }
+            }
+            return;
+        }
+
+        if (this->touch_active) {
+            this->touch_active = false;
+            if (!this->touch_moved) {
+                const auto screen_mid_x = static_cast<s32>(pu::ui::render::ScreenWidth) / 2;
+                if (this->touch_start_x < screen_mid_x) {
+                    if (this->current_page > 0) {
+                        this->LoadPage(this->current_page - 1);
+                    }
+                }
+                else {
+                    if ((this->current_page + 1) < this->page_count) {
+                        this->LoadPage(this->current_page + 1);
+                    }
+                }
+            }
+            return;
+        }
+
+        if (touch_pos.IsEmpty()) {
+            this->touch_had_multitouch = false;
         }
 
         if (keys_down & HidNpadButton_R) {

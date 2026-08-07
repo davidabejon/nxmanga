@@ -32,6 +32,12 @@ class MangaViewerLayout : public pu::ui::Layout {
         static constexpr double MaxZoomFraction = 3.0;
         static constexpr s32 PageIndicatorPadding = 10;
         static constexpr s32 PageIndicatorBorderRadius = 14;
+        // Maximum finger movement, in pixels, still considered a tap rather
+        // than the start of a drag.
+        static constexpr s32 TapMoveTolerance = 12;
+        // How much target_size changes per pixel of change in the distance
+        // between the two pinching fingers.
+        static constexpr double PinchZoomSensitivity = 1.0;
 
         static constexpr s32 MenuPanelWidth = 460;
         static constexpr s32 MenuPanelMargin = 24;
@@ -75,6 +81,18 @@ class MangaViewerLayout : public pu::ui::Layout {
         s32 center_offset_x;
         s32 center_offset_y;
         bool menu_open;
+        bool touch_active;
+        bool touch_moved;
+        s32 touch_start_x;
+        s32 touch_start_y;
+        s32 touch_last_x;
+        s32 touch_last_y;
+        bool pinch_active;
+        double pinch_last_distance;
+        // True from the moment a second finger is seen until the whole
+        // gesture fully releases. Lets the tail end of a pinch (one finger
+        // lifted a frame before the other) avoid being read as a fresh tap.
+        bool touch_had_multitouch;
         OnBack on_back;
         pu::ui::elm::Image::Ref pageImage;
         RoundedRectangle::Ref pageIndicatorBg;
