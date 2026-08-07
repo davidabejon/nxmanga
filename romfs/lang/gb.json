@@ -10,7 +10,8 @@
         "orientation_vertical": "View: Vertical"
     },
     "manga_list": {
-        "no_mangas_found": "No manga found in {path}"
+        "no_mangas_found": "No manga found in {path}",
+        "settings_hint": "Press X to view settings"
     },
     "manga_viewer": {
         "no_images": "No images",

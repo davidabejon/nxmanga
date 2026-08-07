@@ -3,6 +3,7 @@
 #include <pu/Plutonium>
 #include <MangaGrid.hpp>
 #include <LoadingSpinner.hpp>
+#include <RoundedRectangle.hpp>
 #include <SideMenu.hpp>
 #include <Settings.hpp>
 #include <functional>
@@ -42,6 +43,8 @@ class MangaListLayout : public pu::ui::Layout {
         MangaGrid::Ref grid;
         LoadingSpinner::Ref spinner;
         pu::ui::elm::TextBlock::Ref loadingText;
+        RoundedRectangle::Ref settingsHintBg;
+        pu::ui::elm::TextBlock::Ref settingsHint;
         std::vector<std::string> pending_paths;
         std::vector<std::string> pending_names;
         size_t pending_index;

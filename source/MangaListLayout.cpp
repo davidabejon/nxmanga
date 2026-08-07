@@ -26,13 +26,38 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
     this->titleText->SetColor(pu::ui::Color(20, 20, 20, 0xFF));
     this->Add(this->titleText);
 
-    const auto grid_height = static_cast<s32>(pu::ui::render::ScreenHeight) - 110 - 40;
+    const auto screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
+    const auto screen_h = static_cast<s32>(pu::ui::render::ScreenHeight);
+
+    // Hints at the X-button menu without needing it already open. A
+    // translucent backing rectangle keeps the text readable regardless of
+    // what's rendered behind it (cover art, scrolled content, etc.). Built
+    // before the grid below so the grid's height can leave exactly enough
+    // room under it, instead of guessing a margin that happens to fit.
+    constexpr s32 SettingsHintPadding = 10;
+    constexpr s32 SettingsHintBottomGap = 10;
+    constexpr s32 SettingsHintBorderRadius = 10;
+
+    this->settingsHintBg = RoundedRectangle::New(0, 0, 0, 0, pu::ui::Color(60, 60, 60, 170), SettingsHintBorderRadius);
+    this->Add(this->settingsHintBg);
+
+    this->settingsHint = pu::ui::elm::TextBlock::New(75 + SettingsHintPadding, 0, lang::Get("manga_list.settings_hint"));
+    this->settingsHint->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small));
+    this->settingsHint->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
+    this->settingsHint->SetY(screen_h - SettingsHintBottomGap - SettingsHintPadding - this->settingsHint->GetHeight());
+    this->Add(this->settingsHint);
+
+    this->settingsHintBg->SetX(this->settingsHint->GetX() - SettingsHintPadding);
+    this->settingsHintBg->SetY(this->settingsHint->GetY() - SettingsHintPadding);
+    this->settingsHintBg->SetWidth(this->settingsHint->GetWidth() + (SettingsHintPadding * 2));
+    this->settingsHintBg->SetHeight(this->settingsHint->GetHeight() + (SettingsHintPadding * 2));
+
+    constexpr s32 GridBottomGap = 8;
+    const auto grid_height = this->settingsHintBg->GetY() - GridBottomGap - 110;
     this->grid = MangaGrid::New(75, 110, 1770, grid_height, MangaListLayout::GridColumns);
     this->grid->SetVisible(false);
     this->Add(this->grid);
 
-    const auto screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
-    const auto screen_h = static_cast<s32>(pu::ui::render::ScreenHeight);
     constexpr s32 SpinnerRadius = 60;
 
     this->spinner = LoadingSpinner::New((screen_w / 2) - SpinnerRadius, (screen_h / 2) - SpinnerRadius - 30, SpinnerRadius);

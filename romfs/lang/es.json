@@ -10,7 +10,8 @@
         "orientation_vertical": "Vista: Vertical"
     },
     "manga_list": {
-        "no_mangas_found": "No se encontraron mangas en {path}"
+        "no_mangas_found": "No se encontraron mangas en {path}",
+        "settings_hint": "Pulsa X para ver ajustes"
     },
     "manga_viewer": {
         "no_images": "Sin imagenes",
