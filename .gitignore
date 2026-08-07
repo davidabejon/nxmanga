@@ -15,10 +15,6 @@ dist/
 devkitpro/
 DEVKITPRO/
 DEVKITARM/
-
-# Plutonium
-plutonium/
-Plutonium/
 *.nro
 *.nacp
 
