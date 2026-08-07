@@ -27,6 +27,8 @@ class MangaViewerLayout : public pu::ui::Layout {
         static constexpr s32 ZoomSpeed = 10;
         static constexpr double MinZoomFraction = 0.3;
         static constexpr double MaxZoomFraction = 3.0;
+        static constexpr s32 PageIndicatorPadding = 10;
+        static constexpr s32 PageIndicatorBorderRadius = 12;
 
         void LoadPage(const u32 index);
         void ApplyViewMode();
@@ -36,6 +38,7 @@ class MangaViewerLayout : public pu::ui::Layout {
         void ApplyDimensions(const s32 width, const s32 height);
         void AdjustZoom(const s32 delta);
         void SetScroll(const s32 x, const s32 y);
+        void SetPageIndicatorText(const std::string &text);
 
         std::string manga_path;
         std::vector<std::string> page_files;
@@ -52,5 +55,6 @@ class MangaViewerLayout : public pu::ui::Layout {
         s32 center_offset_y;
         OnBack on_back;
         pu::ui::elm::Image::Ref pageImage;
+        pu::ui::elm::Rectangle::Ref pageIndicatorBg;
         pu::ui::elm::TextBlock::Ref pageIndicator;
 };

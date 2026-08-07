@@ -6,14 +6,17 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
     this->pageIndicator->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
-    this->Add(this->pageIndicator);
+    this->pageIndicatorBg = pu::ui::elm::Rectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
 
     if (!this->page_files.empty()) {
         this->LoadPage(0);
     }
     else {
-        this->pageIndicator->SetText("Sin imagenes");
+        this->SetPageIndicatorText("Sin imagenes");
     }
+
+    this->Add(this->pageIndicatorBg);
+    this->Add(this->pageIndicator);
 
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
         if (keys_down & HidNpadButton_R) {
@@ -99,7 +102,17 @@ void MangaViewerLayout::LoadPage(const u32 index) {
     else {
         this->ApplyCurrentMode();
     }
-    this->pageIndicator->SetText(std::to_string(index + 1) + " / " + std::to_string(this->page_files.size()));
+    this->SetPageIndicatorText(std::to_string(index + 1) + " / " + std::to_string(this->page_files.size()));
+}
+
+void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
+    this->pageIndicator->SetText(text);
+
+    const auto padding = MangaViewerLayout::PageIndicatorPadding;
+    this->pageIndicatorBg->SetX(this->pageIndicator->GetX() - padding);
+    this->pageIndicatorBg->SetY(this->pageIndicator->GetY() - padding);
+    this->pageIndicatorBg->SetWidth(this->pageIndicator->GetWidth() + (padding * 2));
+    this->pageIndicatorBg->SetHeight(this->pageIndicator->GetHeight() + (padding * 2));
 }
 
 void MangaViewerLayout::ApplyViewMode() {
