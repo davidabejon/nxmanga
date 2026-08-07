@@ -74,13 +74,35 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
         });
     }
 
+    this->sideMenu = SideMenu::New(this, "Opciones");
+
+    this->orientationItem = this->sideMenu->AddItem(this->GetOrientationLabel(), [this]() {
+        const auto orientation = (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? settings::ReadingOrientation::Horizontal : settings::ReadingOrientation::Vertical;
+        settings::SetReadingOrientation(orientation);
+        this->sideMenu->SetItemName(this->orientationItem, this->GetOrientationLabel());
+    });
+
+    this->sideMenu->AddItem("Cerrar menu", [this]() {
+        this->sideMenu->SetOpen(false);
+    });
+
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
+        const auto menu_consumed = this->sideMenu->HandleInput(keys_down, keys_up, keys_held, touch_pos);
+        this->grid->SetInputEnabled(!menu_consumed);
+        if (menu_consumed) {
+            return;
+        }
+
         if (keys_down & HidNpadButton_B) {
             if (this->on_back) {
                 this->on_back();
             }
         }
     });
+}
+
+std::string MangaListLayout::GetOrientationLabel() const {
+    return (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? "Vista: Vertical" : "Vista: Horizontal";
 }
 
 void MangaListLayout::LoadNextPendingCover() {

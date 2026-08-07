@@ -299,7 +299,7 @@ void MangaGrid::RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::
 }
 
 void MangaGrid::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
-    if (this->cards.empty()) {
+    if (!this->input_enabled || this->cards.empty()) {
         return;
     }
 
