@@ -1,12 +1,12 @@
 #include <MangaViewerLayout.hpp>
 #include <FsUtils.hpp>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), manga_path(manga_path), page_files(fs::ListImageFiles(manga_path)), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), manga_path(manga_path), page_files(fs::ListImageFiles(manga_path)), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
     this->pageIndicator->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
-    this->pageIndicatorBg = pu::ui::elm::Rectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
+    this->pageIndicatorBg = RoundedRectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
 
     if (!this->page_files.empty()) {
         this->LoadPage(0);
@@ -18,7 +18,89 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
     this->Add(this->pageIndicatorBg);
     this->Add(this->pageIndicator);
 
+    const auto screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
+    const auto screen_h = static_cast<s32>(pu::ui::render::ScreenHeight);
+
+    const auto panel_w = MangaViewerLayout::MenuPanelWidth;
+    const auto panel_h = screen_h - (MangaViewerLayout::MenuPanelMargin * 2);
+    const auto panel_x = screen_w - panel_w - MangaViewerLayout::MenuPanelMargin;
+    const auto panel_y = MangaViewerLayout::MenuPanelMargin;
+    const auto content_x = panel_x + MangaViewerLayout::MenuPanelInset;
+
+    this->menuBg = RoundedRectangle::New(panel_x, panel_y, panel_w, panel_h, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuPanelBorderRadius);
+    this->menuBg->SetVisible(false);
+    this->Add(this->menuBg);
+
+    this->menuTitle = pu::ui::elm::TextBlock::New(content_x, panel_y + 28, "Opciones");
+    this->menuTitle->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large));
+    this->menuTitle->SetColor(MangaViewerLayout::MenuItemTextColor);
+    this->menuTitle->SetVisible(false);
+    this->Add(this->menuTitle);
+
+    const auto divider_y = this->menuTitle->GetY() + this->menuTitle->GetHeight() + 20;
+    this->menuDivider = pu::ui::elm::Rectangle::New(content_x, divider_y, panel_w - (MangaViewerLayout::MenuPanelInset * 2), 3, MangaViewerLayout::MenuAccentColor);
+    this->menuDivider->SetVisible(false);
+    this->Add(this->menuDivider);
+
+    const auto menu_y = divider_y + 24;
+    const auto menu_w = panel_w - (MangaViewerLayout::MenuItemsInset * 2);
+    const auto menu_item_x = panel_x + MangaViewerLayout::MenuItemsInset;
+
+    this->menu = pu::ui::elm::Menu::New(menu_item_x, menu_y, menu_w, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuPanelColor, MangaViewerLayout::MenuItemHeight, 2);
+    this->menu->SetVisible(false);
+
+    auto back_item = pu::ui::elm::MenuItem::New("Volver a la lista");
+    back_item->SetColor(MangaViewerLayout::MenuItemTextColor);
+    back_item->AddOnKey([this]() {
+        this->SetMenuVisible(false);
+        if (this->on_back) {
+            this->on_back();
+        }
+    });
+    this->menu->AddItem(back_item);
+
+    auto close_item = pu::ui::elm::MenuItem::New("Cerrar menu");
+    close_item->SetColor(MangaViewerLayout::MenuItemTextColor);
+    close_item->AddOnKey([this]() {
+        this->SetMenuVisible(false);
+    });
+    this->menu->AddItem(close_item);
+
+    this->Add(this->menu);
+
+    for (u32 i = 0; i < this->menu->GetItems().size(); i++) {
+        const auto outline_y = menu_y + (static_cast<s32>(i) * MangaViewerLayout::MenuItemHeight) + MangaViewerLayout::MenuOutlineMarginY;
+        const auto outline_h = MangaViewerLayout::MenuItemHeight - (MangaViewerLayout::MenuOutlineMarginY * 2);
+        auto outline = RoundedOutlineRectangle::New(menu_item_x, outline_y, menu_w, outline_h, MangaViewerLayout::MenuOutlineIdleColor, MangaViewerLayout::MenuOutlineRadius, MangaViewerLayout::MenuOutlineThickness);
+        outline->SetVisible(false);
+        this->menuItemOutlines.push_back(outline);
+        this->Add(outline);
+    }
+
+    this->menu->SetOnSelectionChanged([this]() {
+        this->UpdateMenuItemOutlines();
+    });
+    this->UpdateMenuItemOutlines();
+
+    this->menuFooter = pu::ui::elm::TextBlock::New(content_x, panel_y + panel_h - 56, "A Seleccionar    B Cerrar");
+    this->menuFooter->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small));
+    this->menuFooter->SetColor(MangaViewerLayout::MenuFooterTextColor);
+    this->menuFooter->SetVisible(false);
+    this->Add(this->menuFooter);
+
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
+        if (keys_down & HidNpadButton_X) {
+            this->SetMenuVisible(!this->menu_open);
+            return;
+        }
+
+        if (this->menu_open) {
+            if (keys_down & HidNpadButton_B) {
+                this->SetMenuVisible(false);
+            }
+            return;
+        }
+
         if (keys_down & HidNpadButton_R) {
             if ((this->current_page + 1) < this->page_files.size()) {
                 this->LoadPage(this->current_page + 1);
@@ -113,6 +195,26 @@ void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
     this->pageIndicatorBg->SetY(this->pageIndicator->GetY() - padding);
     this->pageIndicatorBg->SetWidth(this->pageIndicator->GetWidth() + (padding * 2));
     this->pageIndicatorBg->SetHeight(this->pageIndicator->GetHeight() + (padding * 2));
+}
+
+void MangaViewerLayout::SetMenuVisible(const bool visible) {
+    this->menu_open = visible;
+    this->menuBg->SetVisible(visible);
+    this->menuTitle->SetVisible(visible);
+    this->menuDivider->SetVisible(visible);
+    this->menu->SetVisible(visible);
+    this->menuFooter->SetVisible(visible);
+    for (auto &outline : this->menuItemOutlines) {
+        outline->SetVisible(visible);
+    }
+}
+
+void MangaViewerLayout::UpdateMenuItemOutlines() {
+    const auto selected = this->menu->GetSelectedIndex();
+    for (size_t i = 0; i < this->menuItemOutlines.size(); i++) {
+        const auto is_selected = (static_cast<s32>(i) == selected);
+        this->menuItemOutlines.at(i)->SetOutlineColor(is_selected ? MangaViewerLayout::MenuOutlineFocusColor : MangaViewerLayout::MenuOutlineIdleColor);
+    }
 }
 
 void MangaViewerLayout::ApplyViewMode() {

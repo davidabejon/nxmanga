@@ -1,6 +1,8 @@
 #pragma once
 
 #include <pu/Plutonium>
+#include <RoundedRectangle.hpp>
+#include <RoundedOutlineRectangle.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -28,7 +30,23 @@ class MangaViewerLayout : public pu::ui::Layout {
         static constexpr double MinZoomFraction = 0.3;
         static constexpr double MaxZoomFraction = 3.0;
         static constexpr s32 PageIndicatorPadding = 10;
-        static constexpr s32 PageIndicatorBorderRadius = 12;
+        static constexpr s32 PageIndicatorBorderRadius = 14;
+
+        static constexpr s32 MenuPanelWidth = 460;
+        static constexpr s32 MenuPanelMargin = 24;
+        static constexpr s32 MenuPanelBorderRadius = 24;
+        static constexpr s32 MenuPanelInset = 32;
+        static constexpr s32 MenuItemsInset = 20;
+        static constexpr s32 MenuItemHeight = 84;
+        static constexpr s32 MenuOutlineMarginY = 6;
+        static constexpr s32 MenuOutlineRadius = 16;
+        static constexpr s32 MenuOutlineThickness = 3;
+        static constexpr pu::ui::Color MenuPanelColor = pu::ui::Color(24, 24, 28, 235);
+        static constexpr pu::ui::Color MenuAccentColor = pu::ui::Color(10, 189, 227, 0xFF);
+        static constexpr pu::ui::Color MenuItemTextColor = pu::ui::Color(255, 255, 255, 0xFF);
+        static constexpr pu::ui::Color MenuFooterTextColor = pu::ui::Color(190, 190, 195, 0xFF);
+        static constexpr pu::ui::Color MenuOutlineIdleColor = pu::ui::Color(200, 200, 210, 90);
+        static constexpr pu::ui::Color MenuOutlineFocusColor = pu::ui::Color(120, 200, 255, 0xFF);
 
         void LoadPage(const u32 index);
         void ApplyViewMode();
@@ -39,6 +57,8 @@ class MangaViewerLayout : public pu::ui::Layout {
         void AdjustZoom(const s32 delta);
         void SetScroll(const s32 x, const s32 y);
         void SetPageIndicatorText(const std::string &text);
+        void SetMenuVisible(const bool visible);
+        void UpdateMenuItemOutlines();
 
         std::string manga_path;
         std::vector<std::string> page_files;
@@ -53,8 +73,15 @@ class MangaViewerLayout : public pu::ui::Layout {
         s32 max_scroll_y;
         s32 center_offset_x;
         s32 center_offset_y;
+        bool menu_open;
         OnBack on_back;
         pu::ui::elm::Image::Ref pageImage;
-        pu::ui::elm::Rectangle::Ref pageIndicatorBg;
+        RoundedRectangle::Ref pageIndicatorBg;
         pu::ui::elm::TextBlock::Ref pageIndicator;
+        RoundedRectangle::Ref menuBg;
+        pu::ui::elm::TextBlock::Ref menuTitle;
+        pu::ui::elm::Rectangle::Ref menuDivider;
+        pu::ui::elm::Menu::Ref menu;
+        pu::ui::elm::TextBlock::Ref menuFooter;
+        std::vector<RoundedOutlineRectangle::Ref> menuItemOutlines;
 };
