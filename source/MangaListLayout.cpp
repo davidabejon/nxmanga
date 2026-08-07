@@ -20,20 +20,30 @@ namespace {
 
 }
 
-MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout(), manga_root(manga_root) {
+MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout(), manga_root(manga_root), pending_index(0) {
     this->titleText = pu::ui::elm::TextBlock::New(75, 30, "nxmanga");
     this->titleText->SetColor(pu::ui::Color(20, 20, 20, 0xFF));
     this->Add(this->titleText);
 
     const auto grid_height = static_cast<s32>(pu::ui::render::ScreenHeight) - 110 - 40;
     this->grid = MangaGrid::New(75, 110, 1770, grid_height, MangaListLayout::GridColumns);
+    this->grid->SetVisible(false);
     this->Add(this->grid);
 
-    const auto manga_names = manga::ListMangaEntries(this->manga_root);
-    std::vector<std::string> full_paths;
-    for (const auto &name : manga_names) {
+    const auto screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
+    const auto screen_h = static_cast<s32>(pu::ui::render::ScreenHeight);
+    constexpr s32 SpinnerRadius = 60;
+
+    this->spinner = LoadingSpinner::New((screen_w / 2) - SpinnerRadius, (screen_h / 2) - SpinnerRadius - 30, SpinnerRadius);
+    this->Add(this->spinner);
+
+    this->loadingText = pu::ui::elm::TextBlock::New(0, (screen_h / 2) + SpinnerRadius - 10, "Cargando...");
+    this->loadingText->SetColor(pu::ui::Color(20, 20, 20, 0xFF));
+    this->loadingText->SetX((screen_w - this->loadingText->GetWidth()) / 2);
+    this->Add(this->loadingText);
+
+    for (const auto &name : manga::ListMangaEntries(this->manga_root)) {
         const auto full_path = this->manga_root + "/" + name;
-        full_paths.push_back(full_path);
 
         auto display_name = name;
         if (!fs::IsDirectory(full_path)) {
@@ -43,17 +53,25 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
             }
         }
 
-        this->grid->AddItem(display_name, LoadCoverThumbnail(full_path));
+        this->pending_paths.push_back(full_path);
+        this->pending_names.push_back(display_name);
     }
 
-    this->grid->SetOnItemSelected([this, full_paths](const size_t index) {
+    this->grid->SetOnItemSelected([this](const size_t index) {
         if (this->on_selected) {
-            this->on_selected(full_paths.at(index));
+            this->on_selected(this->pending_paths.at(index));
         }
     });
 
-    if (manga_names.empty()) {
+    if (this->pending_paths.empty()) {
         this->titleText->SetText("No se encontraron mangas en " + this->manga_root);
+        this->spinner->SetVisible(false);
+        this->loadingText->SetVisible(false);
+    }
+    else {
+        this->AddRenderCallback([this]() {
+            this->LoadNextPendingCover();
+        });
     }
 
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
@@ -63,4 +81,19 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
             }
         }
     });
+}
+
+void MangaListLayout::LoadNextPendingCover() {
+    if (this->pending_index >= this->pending_paths.size()) {
+        return;
+    }
+
+    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(this->pending_paths.at(this->pending_index)));
+    this->pending_index++;
+
+    if (this->pending_index >= this->pending_paths.size()) {
+        this->spinner->SetVisible(false);
+        this->loadingText->SetVisible(false);
+        this->grid->SetVisible(true);
+    }
 }

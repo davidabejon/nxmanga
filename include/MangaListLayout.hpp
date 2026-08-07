@@ -2,8 +2,10 @@
 
 #include <pu/Plutonium>
 #include <MangaGrid.hpp>
+#include <LoadingSpinner.hpp>
 #include <functional>
 #include <string>
+#include <vector>
 
 class MangaListLayout : public pu::ui::Layout {
     public:
@@ -24,9 +26,19 @@ class MangaListLayout : public pu::ui::Layout {
         }
 
     private:
+        // Loads one entry's cover thumbnail per frame (called via a render
+        // callback) so the spinner keeps animating while the grid fills in,
+        // instead of blocking on every cover up front.
+        void LoadNextPendingCover();
+
         std::string manga_root;
         OnMangaSelected on_selected;
         OnBack on_back;
         pu::ui::elm::TextBlock::Ref titleText;
         MangaGrid::Ref grid;
+        LoadingSpinner::Ref spinner;
+        pu::ui::elm::TextBlock::Ref loadingText;
+        std::vector<std::string> pending_paths;
+        std::vector<std::string> pending_names;
+        size_t pending_index;
 };
