@@ -35,6 +35,7 @@ class MangaListLayout : public pu::ui::Layout {
         void LoadNextPendingCover();
 
         std::string GetOrientationLabel() const;
+        std::string GetCascadeModeLabel() const;
 
         std::string manga_root;
         OnMangaSelected on_selected;

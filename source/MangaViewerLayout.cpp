@@ -510,7 +510,7 @@ void MangaViewerLayout::PositionImage(const pu::ui::elm::Image::Ref &image, cons
 }
 
 std::string MangaViewerLayout::GetCascadeModeLabel() const {
-    return this->cascade_mode ? lang::Get("manga_viewer.cascade_on") : lang::Get("manga_viewer.cascade_off");
+    return this->cascade_mode ? lang::Get("common.cascade_on") : lang::Get("common.cascade_off");
 }
 
 void MangaViewerLayout::SetCascadeMode(const bool enabled) {
