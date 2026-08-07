@@ -91,6 +91,15 @@ class MangaViewerLayout : public pu::ui::Layout {
         void LoadCascadePage(const u32 index);
         void ReloadCascadePageTexture(const u32 index);
         void SetCascadeScroll(const s32 y);
+        void SetCascadeScrollX(const s32 x);
+        // Changes the width every cascade page is fit to and rescales every
+        // already-measured page's cached height/offset by the same ratio,
+        // so already-loaded pages stay correctly proportioned without
+        // re-decoding them.
+        void AdjustCascadeZoom(const s32 delta);
+        // Recomputes cascade_max_scroll_x/cascade_center_offset_x for the
+        // current cascade_zoom_width vs the logical screen width.
+        void UpdateCascadeHorizontalBounds();
         void UpdateCascadeLayout();
         // Frees textures for pages that scrolled far out of view and
         // reloads ones that scrolled back into range, keeping memory use
@@ -126,6 +135,12 @@ class MangaViewerLayout : public pu::ui::Layout {
         std::vector<s32> cascade_offsets;
         u32 cascade_loaded_count;
         s32 cascade_total_height;
+        // Width every cascade page is currently fit to; GetLogicalScreenWidth()
+        // when unzoomed, wider/narrower once the user pinches/sticks zoom.
+        s32 cascade_zoom_width;
+        s32 cascade_scroll_x;
+        s32 cascade_max_scroll_x;
+        s32 cascade_center_offset_x;
         bool touch_active;
         bool touch_moved;
         s32 touch_start_x;
