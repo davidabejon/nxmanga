@@ -5,26 +5,32 @@
 
 namespace fs {
 
-    namespace {
-
-        bool HasImageExtension(const std::string &name) {
-            const auto dot_pos = name.find_last_of('.');
-            if (dot_pos == std::string::npos) {
-                return false;
-            }
-
-            auto ext = name.substr(dot_pos + 1);
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            return (ext == "jpg") || (ext == "jpeg");
-        }
-
+    bool IsDirectory(const std::string &path) {
+        struct stat st;
+        return (stat(path.c_str(), &st) == 0) && S_ISDIR(st.st_mode);
     }
 
-    std::vector<std::string> ListDirectories(const std::string &path) {
-        std::vector<std::string> dirs;
+    std::string GetExtension(const std::string &name) {
+        const auto dot_pos = name.find_last_of('.');
+        if (dot_pos == std::string::npos) {
+            return "";
+        }
+
+        auto ext = name.substr(dot_pos + 1);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        return ext;
+    }
+
+    bool HasImageExtension(const std::string &name) {
+        const auto ext = GetExtension(name);
+        return (ext == "jpg") || (ext == "jpeg") || (ext == "png") || (ext == "webp");
+    }
+
+    std::vector<std::string> ListEntries(const std::string &path) {
+        std::vector<std::string> entries;
         auto dir = opendir(path.c_str());
         if (dir == nullptr) {
-            return dirs;
+            return entries;
         }
 
         struct dirent *entry;
@@ -33,36 +39,21 @@ namespace fs {
             if ((name == ".") || (name == "..")) {
                 continue;
             }
-
-            struct stat st;
-            const auto full_path = path + "/" + name;
-            if ((stat(full_path.c_str(), &st) == 0) && S_ISDIR(st.st_mode)) {
-                dirs.push_back(name);
-            }
+            entries.push_back(name);
         }
         closedir(dir);
 
-        std::sort(dirs.begin(), dirs.end());
-        return dirs;
+        std::sort(entries.begin(), entries.end());
+        return entries;
     }
 
     std::vector<std::string> ListImageFiles(const std::string &path) {
         std::vector<std::string> files;
-        auto dir = opendir(path.c_str());
-        if (dir == nullptr) {
-            return files;
-        }
-
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            const std::string name = entry->d_name;
+        for (const auto &name : ListEntries(path)) {
             if (HasImageExtension(name)) {
                 files.push_back(name);
             }
         }
-        closedir(dir);
-
-        std::sort(files.begin(), files.end());
         return files;
     }
 

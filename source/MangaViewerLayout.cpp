@@ -1,14 +1,13 @@
 #include <MangaViewerLayout.hpp>
-#include <FsUtils.hpp>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), manga_path(manga_path), page_files(fs::ListImageFiles(manga_path)), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), tex_width(0), tex_height(0), target_size(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), menu_open(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
     this->pageIndicator->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
     this->pageIndicatorBg = RoundedRectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
 
-    if (!this->page_files.empty()) {
+    if (this->page_count > 0) {
         this->LoadPage(0);
     }
     else {
@@ -102,7 +101,7 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         }
 
         if (keys_down & HidNpadButton_R) {
-            if ((this->current_page + 1) < this->page_files.size()) {
+            if ((this->current_page + 1) < this->page_count) {
                 this->LoadPage(this->current_page + 1);
             }
         }
@@ -155,12 +154,16 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
 }
 
 void MangaViewerLayout::LoadPage(const u32 index) {
-    if (index >= this->page_files.size()) {
+    if (index >= this->page_count) {
         return;
     }
 
-    const auto path = this->manga_path + "/" + this->page_files.at(index);
-    auto tex = pu::ui::render::LoadImageFromFile(path);
+    const auto data = this->source->ReadPage(index);
+    if (data.empty()) {
+        return;
+    }
+
+    auto tex = pu::ui::render::LoadImageFromBuffer(data.data(), data.size());
     if (tex == nullptr) {
         return;
     }
@@ -184,7 +187,7 @@ void MangaViewerLayout::LoadPage(const u32 index) {
     else {
         this->ApplyCurrentMode();
     }
-    this->SetPageIndicatorText(std::to_string(index + 1) + " / " + std::to_string(this->page_files.size()));
+    this->SetPageIndicatorText(std::to_string(index + 1) + " / " + std::to_string(this->page_count));
 }
 
 void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {

@@ -3,6 +3,7 @@
 #include <pu/Plutonium>
 #include <RoundedRectangle.hpp>
 #include <RoundedOutlineRectangle.hpp>
+#include <manga/MangaSource.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -60,8 +61,8 @@ class MangaViewerLayout : public pu::ui::Layout {
         void SetMenuVisible(const bool visible);
         void UpdateMenuItemOutlines();
 
-        std::string manga_path;
-        std::vector<std::string> page_files;
+        manga::MangaSourcePtr source;
+        size_t page_count;
         u32 current_page;
         ViewMode mode;
         s32 tex_width;

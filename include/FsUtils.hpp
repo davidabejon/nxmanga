@@ -5,7 +5,11 @@
 
 namespace fs {
 
-    std::vector<std::string> ListDirectories(const std::string &path);
+    bool IsDirectory(const std::string &path);
+    std::string GetExtension(const std::string &name);
+    bool HasImageExtension(const std::string &name);
+
+    std::vector<std::string> ListEntries(const std::string &path);
     std::vector<std::string> ListImageFiles(const std::string &path);
 
 }
