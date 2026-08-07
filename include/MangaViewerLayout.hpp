@@ -4,6 +4,7 @@
 #include <RoundedRectangle.hpp>
 #include <RoundedOutlineRectangle.hpp>
 #include <manga/MangaSource.hpp>
+#include <Settings.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -30,11 +31,8 @@ class MangaViewerLayout : public pu::ui::Layout {
         // modes above. Horizontal is the console held normally, exactly as
         // it works today. Vertical rotates the page 90 degrees so it fills
         // the screen like an e-book, held with the console turned on its
-        // side.
-        enum class ReadingOrientation {
-            Horizontal,
-            Vertical
-        };
+        // side. Persisted via Settings, so it carries over between mangas.
+        using ReadingOrientation = settings::ReadingOrientation;
 
         static constexpr s32 ScrollSpeed = 25;
         static constexpr s32 ZoomSpeed = 10;
