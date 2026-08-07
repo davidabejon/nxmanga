@@ -7,6 +7,7 @@
 #include <Settings.hpp>
 #include <functional>
 #include <string>
+#include <vector>
 
 class MangaViewerLayout : public pu::ui::Layout {
     public:
@@ -48,6 +49,11 @@ class MangaViewerLayout : public pu::ui::Layout {
         // Clockwise rotation, in degrees, applied to the page image in
         // ReadingOrientation::Vertical.
         static constexpr float PortraitRotationAngle = 90.0f;
+        // How many logical screen heights of cascade pages to keep decoded
+        // ahead of/behind the viewport. Bounds memory use to a handful of
+        // pages regardless of chapter length.
+        static constexpr s32 CascadeLoadAheadScreens = 2;
+        static constexpr s32 CascadeUnloadAboveScreens = 1;
 
         void LoadPage(const u32 index);
         void ApplyViewMode();
@@ -60,10 +66,12 @@ class MangaViewerLayout : public pu::ui::Layout {
         void SetPageIndicatorText(const std::string &text);
         void ToggleOrientation();
         std::string GetOrientationLabel() const;
-        // Positions/sizes/rotates pageImage on the real (never-rotated)
-        // screen from the logical width/height/scroll/center-offset state
-        // below, which are always expressed as if orientation were
-        // Horizontal.
+        // Positions/sizes/rotates an Image on the real (never-rotated)
+        // screen from logical (orientation-agnostic) coordinates/size,
+        // shared by both the single-page and cascade rendering paths.
+        void PositionImage(const pu::ui::elm::Image::Ref &image, const s32 logical_x, const s32 logical_y, const s32 width, const s32 height) const;
+        // Positions/sizes/rotates pageImage from the logical
+        // width/height/scroll/center-offset state below.
         void UpdateImageTransform();
         s32 GetLogicalScreenWidth() const;
         s32 GetLogicalScreenHeight() const;
@@ -71,6 +79,33 @@ class MangaViewerLayout : public pu::ui::Layout {
         // drag and tap handling stay orientation-agnostic.
         s32 ToLogicalTouchX(const s32 real_x, const s32 real_y) const;
         s32 ToLogicalTouchY(const s32 real_x, const s32 real_y) const;
+
+        void SetCascadeMode(const bool enabled);
+        std::string GetCascadeModeLabel() const;
+        void EnterCascadeMode();
+        void LeaveCascadeMode();
+        // Tears down and rebuilds all cascade state from scratch, needed
+        // after an orientation change since every page's fit-to-width
+        // height depends on the (now different) logical screen width.
+        void ResetCascadeMode();
+        void LoadCascadePage(const u32 index);
+        void ReloadCascadePageTexture(const u32 index);
+        void SetCascadeScroll(const s32 y);
+        void SetCascadeScrollX(const s32 x);
+        // Changes the width every cascade page is fit to and rescales every
+        // already-measured page's cached height/offset by the same ratio,
+        // so already-loaded pages stay correctly proportioned without
+        // re-decoding them.
+        void AdjustCascadeZoom(const s32 delta);
+        // Recomputes cascade_max_scroll_x/cascade_center_offset_x for the
+        // current cascade_zoom_width vs the logical screen width.
+        void UpdateCascadeHorizontalBounds();
+        void UpdateCascadeLayout();
+        // Frees textures for pages that scrolled far out of view and
+        // reloads ones that scrolled back into range, keeping memory use
+        // bounded regardless of chapter length.
+        void UpdateCascadeTextures();
+        void UpdateCurrentPageFromCascadeScroll();
 
         manga::MangaSourcePtr source;
         size_t page_count;
@@ -90,6 +125,22 @@ class MangaViewerLayout : public pu::ui::Layout {
         s32 max_scroll_y;
         s32 center_offset_x;
         s32 center_offset_y;
+        bool cascade_mode;
+        // Parallel, page_count-sized vectors: null/0 until LoadCascadePage
+        // reaches that index. Pages load contiguously from 0, so indices
+        // below cascade_loaded_count always have a valid height/offset,
+        // even if their texture has since been unloaded to save memory.
+        std::vector<pu::ui::elm::Image::Ref> cascade_images;
+        std::vector<s32> cascade_heights;
+        std::vector<s32> cascade_offsets;
+        u32 cascade_loaded_count;
+        s32 cascade_total_height;
+        // Width every cascade page is currently fit to; GetLogicalScreenWidth()
+        // when unzoomed, wider/narrower once the user pinches/sticks zoom.
+        s32 cascade_zoom_width;
+        s32 cascade_scroll_x;
+        s32 cascade_max_scroll_x;
+        s32 cascade_center_offset_x;
         bool touch_active;
         bool touch_moved;
         s32 touch_start_x;

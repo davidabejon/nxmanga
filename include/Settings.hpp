@@ -18,4 +18,9 @@ namespace settings {
     std::string GetLanguage();
     void SetLanguage(const std::string &language_code);
 
+    // Cascade mode: pages shown as one continuous vertical strip instead of
+    // one at a time.
+    bool GetCascadeMode();
+    void SetCascadeMode(const bool enabled);
+
 }

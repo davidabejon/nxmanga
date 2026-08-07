@@ -110,6 +110,13 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
         this->sideMenu->RefreshLabels();
     });
 
+    this->sideMenu->AddItem([this]() {
+        return this->GetCascadeModeLabel();
+    }, [this]() {
+        settings::SetCascadeMode(!settings::GetCascadeMode());
+        this->sideMenu->RefreshLabels();
+    });
+
     this->sideMenu->AddItem([]() {
         return lang::Get("common.side_menu_close");
     }, [this]() {
@@ -133,6 +140,10 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
 
 std::string MangaListLayout::GetOrientationLabel() const {
     return (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? lang::Get("common.orientation_vertical") : lang::Get("common.orientation_horizontal");
+}
+
+std::string MangaListLayout::GetCascadeModeLabel() const {
+    return settings::GetCascadeMode() ? lang::Get("common.cascade_on") : lang::Get("common.cascade_off");
 }
 
 void MangaListLayout::LoadNextPendingCover() {

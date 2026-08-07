@@ -7,7 +7,9 @@
         "side_menu_close": "Close menu",
         "side_menu_footer": "A Select    B Close",
         "orientation_horizontal": "View: Horizontal",
-        "orientation_vertical": "View: Vertical"
+        "orientation_vertical": "View: Vertical",
+        "cascade_on": "Cascade: On",
+        "cascade_off": "Cascade: Off"
     },
     "manga_list": {
         "no_mangas_found": "No manga found in {path}",
