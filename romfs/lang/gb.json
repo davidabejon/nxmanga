@@ -16,7 +16,9 @@
     "manga_viewer": {
         "no_images": "No images",
         "back_to_list": "Back to list",
-        "page_indicator": "{current} / {total}"
+        "page_indicator": "{current} / {total}",
+        "cascade_on": "Cascade: On",
+        "cascade_off": "Cascade: Off"
     },
     "manga_grid": {
         "cover_placeholder": "?"

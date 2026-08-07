@@ -2,18 +2,42 @@
 #include <Lang.hpp>
 #include <cmath>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), cascade_mode(false), cascade_loaded_count(0), cascade_total_height(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
+
+    // Pre-create every Image this Layout could ever need (one for
+    // single-page mode, plus one per cascade page) and add them all before
+    // any UI chrome below. pu::ui::Layout has no way to remove or reorder
+    // elements once added, so an Image created lazily at runtime (e.g. from
+    // a menu click, switching modes) would render ON TOP of chrome added
+    // earlier instead of behind it. Pre-creating everything up front, in
+    // this order, guarantees pages always stay beneath the indicator/menu.
+    this->pageImage = pu::ui::elm::Image::New(0, 0, nullptr);
+    this->pageImage->SetVisible(false);
+    this->Add(this->pageImage);
+
+    this->cascade_images.reserve(this->page_count);
+    this->cascade_heights.assign(this->page_count, 0);
+    this->cascade_offsets.assign(this->page_count, 0);
+    for (size_t i = 0; i < this->page_count; i++) {
+        auto image = pu::ui::elm::Image::New(0, 0, nullptr);
+        image->SetVisible(false);
+        this->cascade_images.push_back(image);
+        this->Add(image);
+    }
 
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
     this->pageIndicator->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
     this->pageIndicatorBg = RoundedRectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
 
-    if (this->page_count > 0) {
-        this->LoadPage(0);
+    if (this->page_count == 0) {
+        this->SetPageIndicatorText(lang::Get("manga_viewer.no_images"));
+    }
+    else if (settings::GetCascadeMode()) {
+        this->SetCascadeMode(true);
     }
     else {
-        this->SetPageIndicatorText(lang::Get("manga_viewer.no_images"));
+        this->LoadPage(0);
     }
 
     this->Add(this->pageIndicatorBg);
@@ -26,6 +50,15 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
     }, [this]() {
         this->ToggleOrientation();
     });
+
+    if (this->page_count > 0) {
+        this->sideMenu->AddItem([this]() {
+            return this->GetCascadeModeLabel();
+        }, [this]() {
+            this->SetCascadeMode(!this->cascade_mode);
+            this->sideMenu->RefreshLabels();
+        });
+    }
 
     this->sideMenu->AddItem([]() {
         return lang::Get("manga_viewer.back_to_list");
@@ -65,7 +98,7 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
             const auto dy = y1 - y0;
             const auto distance = std::sqrt((dx * dx) + (dy * dy));
 
-            if (this->pinch_active) {
+            if (this->pinch_active && !this->cascade_mode) {
                 const auto delta = distance - this->pinch_last_distance;
                 this->AdjustZoom(static_cast<s32>(delta * MangaViewerLayout::PinchZoomSensitivity));
             }
@@ -98,7 +131,12 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
                 const auto delta_x = touch_x - this->touch_last_x;
                 const auto delta_y = touch_y - this->touch_last_y;
                 if ((delta_x != 0) || (delta_y != 0)) {
-                    this->SetScroll(this->scroll_x - delta_x, this->scroll_y - delta_y);
+                    if (this->cascade_mode) {
+                        this->SetCascadeScroll(this->scroll_y - delta_y);
+                    }
+                    else {
+                        this->SetScroll(this->scroll_x - delta_x, this->scroll_y - delta_y);
+                    }
                     this->touch_last_x = touch_x;
                     this->touch_last_y = touch_y;
                 }
@@ -116,7 +154,9 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
 
         if (this->touch_active) {
             this->touch_active = false;
-            if (!this->touch_moved) {
+            // Cascade mode has no discrete page to flip to; navigation there
+            // is drag/stick scrolling only.
+            if (!this->touch_moved && !this->cascade_mode) {
                 const auto screen_mid_x = this->GetLogicalScreenWidth() / 2;
                 if (this->touch_start_x < screen_mid_x) {
                     if (this->current_page > 0) {
@@ -137,16 +177,22 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         }
 
         if (keys_down & HidNpadButton_R) {
-            if ((this->current_page + 1) < this->page_count) {
+            if (this->cascade_mode) {
+                this->SetCascadeScroll(this->scroll_y + this->GetLogicalScreenHeight());
+            }
+            else if ((this->current_page + 1) < this->page_count) {
                 this->LoadPage(this->current_page + 1);
             }
         }
         else if (keys_down & HidNpadButton_L) {
-            if (this->current_page > 0) {
+            if (this->cascade_mode) {
+                this->SetCascadeScroll(this->scroll_y - this->GetLogicalScreenHeight());
+            }
+            else if (this->current_page > 0) {
                 this->LoadPage(this->current_page - 1);
             }
         }
-        else if (keys_down & HidNpadButton_Y) {
+        else if ((keys_down & HidNpadButton_Y) && !this->cascade_mode) {
             switch (this->mode) {
                 case ViewMode::Vertical:
                     this->mode = ViewMode::Intermediate;
@@ -166,25 +212,37 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
             }
         }
 
-        if (keys_held & HidNpadButton_StickLLeft) {
-            this->SetScroll(this->scroll_x - MangaViewerLayout::ScrollSpeed, this->scroll_y);
+        if (this->cascade_mode) {
+            // No horizontal scroll or zoom in cascade mode: every page is
+            // always fit to the full logical width.
+            if (keys_held & HidNpadButton_StickLUp) {
+                this->SetCascadeScroll(this->scroll_y - MangaViewerLayout::ScrollSpeed);
+            }
+            else if (keys_held & HidNpadButton_StickLDown) {
+                this->SetCascadeScroll(this->scroll_y + MangaViewerLayout::ScrollSpeed);
+            }
         }
-        else if (keys_held & HidNpadButton_StickLRight) {
-            this->SetScroll(this->scroll_x + MangaViewerLayout::ScrollSpeed, this->scroll_y);
-        }
+        else {
+            if (keys_held & HidNpadButton_StickLLeft) {
+                this->SetScroll(this->scroll_x - MangaViewerLayout::ScrollSpeed, this->scroll_y);
+            }
+            else if (keys_held & HidNpadButton_StickLRight) {
+                this->SetScroll(this->scroll_x + MangaViewerLayout::ScrollSpeed, this->scroll_y);
+            }
 
-        if (keys_held & HidNpadButton_StickLUp) {
-            this->SetScroll(this->scroll_x, this->scroll_y - MangaViewerLayout::ScrollSpeed);
-        }
-        else if (keys_held & HidNpadButton_StickLDown) {
-            this->SetScroll(this->scroll_x, this->scroll_y + MangaViewerLayout::ScrollSpeed);
-        }
+            if (keys_held & HidNpadButton_StickLUp) {
+                this->SetScroll(this->scroll_x, this->scroll_y - MangaViewerLayout::ScrollSpeed);
+            }
+            else if (keys_held & HidNpadButton_StickLDown) {
+                this->SetScroll(this->scroll_x, this->scroll_y + MangaViewerLayout::ScrollSpeed);
+            }
 
-        if (keys_held & HidNpadButton_StickRUp) {
-            this->AdjustZoom(MangaViewerLayout::ZoomSpeed);
-        }
-        else if (keys_held & HidNpadButton_StickRDown) {
-            this->AdjustZoom(-MangaViewerLayout::ZoomSpeed);
+            if (keys_held & HidNpadButton_StickRUp) {
+                this->AdjustZoom(MangaViewerLayout::ZoomSpeed);
+            }
+            else if (keys_held & HidNpadButton_StickRDown) {
+                this->AdjustZoom(-MangaViewerLayout::ZoomSpeed);
+            }
         }
     });
 }
@@ -207,14 +265,8 @@ void MangaViewerLayout::LoadPage(const u32 index) {
     this->tex_width = pu::ui::render::GetTextureWidth(tex);
     this->tex_height = pu::ui::render::GetTextureHeight(tex);
 
-    auto tex_handle = pu::sdl2::TextureHandle::New(tex);
-    if (this->pageImage == nullptr) {
-        this->pageImage = pu::ui::elm::Image::New(0, 0, tex_handle);
-        this->Add(this->pageImage);
-    }
-    else {
-        this->pageImage->SetImage(tex_handle);
-    }
+    this->pageImage->SetImage(pu::sdl2::TextureHandle::New(tex));
+    this->pageImage->SetVisible(true);
 
     this->current_page = index;
     if (this->target_size <= 0) {
@@ -244,9 +296,18 @@ void MangaViewerLayout::ToggleOrientation() {
     this->orientation = (this->orientation == ReadingOrientation::Vertical) ? ReadingOrientation::Horizontal : ReadingOrientation::Vertical;
     settings::SetReadingOrientation(this->orientation);
     this->sideMenu->RefreshLabels();
-    // Screen space swaps axes, so re-run the current fit mode against the
-    // new logical dimensions and reset scroll, exactly like a resize.
-    this->ApplyViewMode();
+
+    if (this->cascade_mode) {
+        // Every loaded page's fit-to-width height depends on the logical
+        // screen width, which just changed, so there's no cheap way to
+        // reposition in place: rebuild the whole cascade from scratch.
+        this->ResetCascadeMode();
+    }
+    else {
+        // Screen space swaps axes, so re-run the current fit mode against the
+        // new logical dimensions and reset scroll, exactly like a resize.
+        this->ApplyViewMode();
+    }
 }
 
 s32 MangaViewerLayout::GetLogicalScreenWidth() const {
@@ -410,33 +471,211 @@ void MangaViewerLayout::UpdateImageTransform() {
 
     const auto logical_x = this->center_offset_x - this->scroll_x;
     const auto logical_y = this->center_offset_y - this->scroll_y;
+    this->PositionImage(this->pageImage, logical_x, logical_y, this->image_width, this->image_height);
+}
+
+void MangaViewerLayout::PositionImage(const pu::ui::elm::Image::Ref &image, const s32 logical_x, const s32 logical_y, const s32 width, const s32 height) const {
+    if (image == nullptr) {
+        return;
+    }
 
     if (this->orientation == ReadingOrientation::Vertical) {
-        // pageImage is drawn rotated clockwise on the real (never-rotated)
+        // image is drawn rotated clockwise on the real (never-rotated)
         // screen; read it by turning the console counter-clockwise, like a
         // book. SDL first stretches the whole texture into the rect we give
         // it, THEN rotates that rect about its own center — so the rect must
-        // keep image_width/image_height as-is (already the correct aspect
-        // ratio) or the stretch step distorts the page before it's ever
-        // rotated. The swapped on-screen footprint falls out of rotating a
-        // non-square rect; it needs no manual width/height swap here.
+        // keep width/height as-is (already the correct aspect ratio) or the
+        // stretch step distorts the page before it's ever rotated. The
+        // swapped on-screen footprint falls out of rotating a non-square
+        // rect; it needs no manual width/height swap here.
         const auto real_screen_w = static_cast<s32>(pu::ui::render::ScreenWidth);
-        const auto logical_center_x = logical_x + (this->image_width / 2);
-        const auto logical_center_y = logical_y + (this->image_height / 2);
+        const auto logical_center_x = logical_x + (width / 2);
+        const auto logical_center_y = logical_y + (height / 2);
         const auto real_center_x = real_screen_w - logical_center_y;
         const auto real_center_y = logical_center_x;
 
-        this->pageImage->SetWidth(this->image_width);
-        this->pageImage->SetHeight(this->image_height);
-        this->pageImage->SetX(real_center_x - (this->image_width / 2));
-        this->pageImage->SetY(real_center_y - (this->image_height / 2));
-        this->pageImage->SetRotationAngle(MangaViewerLayout::PortraitRotationAngle);
+        image->SetWidth(width);
+        image->SetHeight(height);
+        image->SetX(real_center_x - (width / 2));
+        image->SetY(real_center_y - (height / 2));
+        image->SetRotationAngle(MangaViewerLayout::PortraitRotationAngle);
     }
     else {
-        this->pageImage->SetWidth(this->image_width);
-        this->pageImage->SetHeight(this->image_height);
-        this->pageImage->SetX(logical_x);
-        this->pageImage->SetY(logical_y);
-        this->pageImage->SetRotationAngle(0.0f);
+        image->SetWidth(width);
+        image->SetHeight(height);
+        image->SetX(logical_x);
+        image->SetY(logical_y);
+        image->SetRotationAngle(0.0f);
     }
+}
+
+std::string MangaViewerLayout::GetCascadeModeLabel() const {
+    return this->cascade_mode ? lang::Get("manga_viewer.cascade_on") : lang::Get("manga_viewer.cascade_off");
+}
+
+void MangaViewerLayout::SetCascadeMode(const bool enabled) {
+    if (this->cascade_mode == enabled) {
+        return;
+    }
+    settings::SetCascadeMode(enabled);
+
+    if (enabled) {
+        this->EnterCascadeMode();
+    }
+    else {
+        this->LeaveCascadeMode();
+    }
+}
+
+void MangaViewerLayout::EnterCascadeMode() {
+    this->cascade_mode = true;
+    this->pageImage->SetVisible(false);
+
+    // Loads sequentially up to the page we were on in single-page mode, so
+    // switching modes keeps roughly the same place instead of jumping back
+    // to the very first page.
+    while ((this->cascade_loaded_count <= this->current_page) && (this->cascade_loaded_count < static_cast<u32>(this->page_count))) {
+        this->LoadCascadePage(this->cascade_loaded_count);
+    }
+
+    this->SetCascadeScroll(this->cascade_offsets.at(this->current_page));
+}
+
+void MangaViewerLayout::LeaveCascadeMode() {
+    this->cascade_mode = false;
+    for (auto &image : this->cascade_images) {
+        image->SetVisible(false);
+        // Frees the decoded texture; heights/offsets stay cached so
+        // re-entering cascade mode later doesn't need to re-measure.
+        image->SetImage(nullptr);
+    }
+
+    this->pageImage->SetVisible(true);
+    this->LoadPage(this->current_page);
+}
+
+void MangaViewerLayout::ResetCascadeMode() {
+    for (auto &image : this->cascade_images) {
+        image->SetVisible(false);
+        image->SetImage(nullptr);
+    }
+    this->cascade_heights.assign(this->page_count, 0);
+    this->cascade_offsets.assign(this->page_count, 0);
+    this->cascade_loaded_count = 0;
+    this->cascade_total_height = 0;
+
+    this->EnterCascadeMode();
+}
+
+void MangaViewerLayout::LoadCascadePage(const u32 index) {
+    if (index >= this->page_count) {
+        return;
+    }
+
+    s32 height = 0;
+    const auto data = this->source->ReadPage(index);
+    if (!data.empty()) {
+        auto tex = pu::ui::render::LoadImageFromBuffer(data.data(), data.size());
+        if (tex != nullptr) {
+            const auto tex_w = pu::ui::render::GetTextureWidth(tex);
+            const auto tex_h = pu::ui::render::GetTextureHeight(tex);
+            const auto width = this->GetLogicalScreenWidth();
+            height = static_cast<s32>((static_cast<double>(tex_h) * width) / tex_w);
+
+            this->cascade_images.at(index)->SetImage(pu::sdl2::TextureHandle::New(tex));
+            this->cascade_images.at(index)->SetVisible(true);
+        }
+    }
+    // A broken/unreadable page just contributes zero height rather than
+    // getting stuck retrying it forever.
+
+    this->cascade_offsets.at(index) = this->cascade_total_height;
+    this->cascade_heights.at(index) = height;
+    this->cascade_total_height += height;
+    this->cascade_loaded_count = index + 1;
+}
+
+void MangaViewerLayout::ReloadCascadePageTexture(const u32 index) {
+    const auto data = this->source->ReadPage(index);
+    if (data.empty()) {
+        return;
+    }
+
+    auto tex = pu::ui::render::LoadImageFromBuffer(data.data(), data.size());
+    if (tex == nullptr) {
+        return;
+    }
+    this->cascade_images.at(index)->SetImage(pu::sdl2::TextureHandle::New(tex));
+    // LeaveCascadeMode hides every cascade image on the way out; a page
+    // that's merely being re-textured here (as opposed to loaded for the
+    // first time via LoadCascadePage) needs its visibility restored too.
+    this->cascade_images.at(index)->SetVisible(true);
+}
+
+void MangaViewerLayout::SetCascadeScroll(const s32 y) {
+    auto target_y = y;
+    if (target_y < 0) {
+        target_y = 0;
+    }
+
+    const auto logical_h = this->GetLogicalScreenHeight();
+    const auto load_ahead = logical_h * MangaViewerLayout::CascadeLoadAheadScreens;
+    while ((this->cascade_loaded_count < static_cast<u32>(this->page_count)) && ((this->cascade_total_height - target_y) < load_ahead)) {
+        this->LoadCascadePage(this->cascade_loaded_count);
+    }
+
+    const auto max_y = this->cascade_total_height - logical_h;
+    if (target_y > max_y) {
+        target_y = (max_y < 0) ? 0 : max_y;
+    }
+
+    this->scroll_y = target_y;
+    // Texture reloads first: Image::SetImage re-derives width/height from
+    // the raw texture's pixel size, clobbering whatever fit-to-width size
+    // PositionImage last set. Laying out after, unconditionally, corrects
+    // that for every loaded page regardless of what changed above.
+    this->UpdateCascadeTextures();
+    this->UpdateCascadeLayout();
+    this->UpdateCurrentPageFromCascadeScroll();
+}
+
+void MangaViewerLayout::UpdateCascadeLayout() {
+    const auto width = this->GetLogicalScreenWidth();
+    for (u32 i = 0; i < this->cascade_loaded_count; i++) {
+        this->PositionImage(this->cascade_images.at(i), 0, this->cascade_offsets.at(i) - this->scroll_y, width, this->cascade_heights.at(i));
+    }
+}
+
+void MangaViewerLayout::UpdateCascadeTextures() {
+    const auto logical_h = this->GetLogicalScreenHeight();
+    const auto keep_above = this->scroll_y - (logical_h * MangaViewerLayout::CascadeUnloadAboveScreens);
+    const auto keep_below = this->scroll_y + (logical_h * MangaViewerLayout::CascadeLoadAheadScreens);
+
+    for (u32 i = 0; i < this->cascade_loaded_count; i++) {
+        auto &image = this->cascade_images.at(i);
+
+        const auto page_top = this->cascade_offsets.at(i);
+        const auto page_bottom = page_top + this->cascade_heights.at(i);
+        const auto in_range = (page_bottom >= keep_above) && (page_top <= keep_below);
+
+        if (in_range && !image->IsImageValid()) {
+            this->ReloadCascadePageTexture(i);
+        }
+        else if (!in_range && image->IsImageValid()) {
+            image->SetImage(nullptr);
+        }
+    }
+}
+
+void MangaViewerLayout::UpdateCurrentPageFromCascadeScroll() {
+    const auto viewport_center = this->scroll_y + (this->GetLogicalScreenHeight() / 2);
+    for (u32 i = 0; i < this->cascade_loaded_count; i++) {
+        const auto top = this->cascade_offsets.at(i);
+        const auto bottom = top + this->cascade_heights.at(i);
+        if ((viewport_center >= top) && (viewport_center < bottom)) {
+            this->current_page = i;
+            break;
+        }
+    }
+    this->SetPageIndicatorText(lang::Get("manga_viewer.page_indicator", {{"current", std::to_string(this->current_page + 1)}, {"total", std::to_string(this->page_count)}}));
 }
