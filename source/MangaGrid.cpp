@@ -1,10 +1,11 @@
 #include <MangaGrid.hpp>
 #include <algorithm>
 
-MangaGrid::MangaGrid(const s32 x, const s32 y, const s32 width, const s32 height, const s32 columns) : Element(), x(x), y(y), w(width), h(height), columns(columns), selected_index(0), first_visible_row(0) {}
+MangaGrid::MangaGrid(const s32 x, const s32 y, const s32 width, const s32 height, const s32 columns) : Element(), x(x), y(y), w(width), h(height), columns(columns), selected_index(0), scroll_y(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_y(0) {}
 
 s32 MangaGrid::GetCardWidth() {
-    return (this->w - (MangaGrid::CardSpacing * (this->columns - 1))) / this->columns;
+    const auto usable_w = this->w - (MangaGrid::GridPadding * 2);
+    return (usable_w - (MangaGrid::CardSpacing * (this->columns - 1))) / this->columns;
 }
 
 s32 MangaGrid::GetCardHeight() {
@@ -16,9 +17,23 @@ s32 MangaGrid::GetRowHeight() {
     return this->GetCardHeight() + MangaGrid::CardSpacing;
 }
 
-s32 MangaGrid::GetRowsToShow() {
-    const auto rows = (this->h + MangaGrid::CardSpacing) / this->GetRowHeight();
-    return (rows < 1) ? 1 : rows;
+s32 MangaGrid::GetRowCount() {
+    return static_cast<s32>((this->cards.size() + this->columns - 1) / this->columns);
+}
+
+s32 MangaGrid::GetContentHeight() {
+    return this->h - (MangaGrid::GridPadding * 2);
+}
+
+s32 MangaGrid::GetMaxScrollY() {
+    const auto row_count = this->GetRowCount();
+    if (row_count == 0) {
+        return 0;
+    }
+
+    const auto content_h = (row_count * this->GetRowHeight()) - MangaGrid::CardSpacing;
+    const auto max_scroll = content_h - this->GetContentHeight();
+    return (max_scroll < 0) ? 0 : max_scroll;
 }
 
 s32 MangaGrid::GetTitleAreaWidth() {
@@ -32,29 +47,46 @@ void MangaGrid::AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref t
     auto clamped_title_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(font_name, title, MangaGrid::TitleColor, title_area_w));
     auto full_title_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(font_name, title, MangaGrid::TitleColor));
     this->cards.push_back({thumbnail, clamped_title_tex, full_title_tex, 0, 0});
-    this->UpdatePageIndicator();
 }
 
 void MangaGrid::ClearItems() {
     this->cards.clear();
     this->selected_index = 0;
-    this->first_visible_row = 0;
-    this->page_indicator_tex = nullptr;
+    this->scroll_y = 0;
 }
 
-void MangaGrid::UpdatePageIndicator() {
-    const auto text = std::to_string(this->selected_index + 1) + " / " + std::to_string(this->cards.size());
-    this->page_indicator_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium), text, MangaGrid::PageIndicatorTextColor));
-}
-
-void MangaGrid::EnsureSelectedRowVisible() {
-    const auto row = static_cast<s32>(this->selected_index) / this->columns;
-    const auto rows_to_show = this->GetRowsToShow();
-    if (row < this->first_visible_row) {
-        this->first_visible_row = row;
+void MangaGrid::ScrollBy(const s32 delta_y) {
+    auto new_scroll = this->scroll_y + delta_y;
+    const auto max_scroll = this->GetMaxScrollY();
+    if (new_scroll < 0) {
+        new_scroll = 0;
     }
-    else if (row >= (this->first_visible_row + rows_to_show)) {
-        this->first_visible_row = row - rows_to_show + 1;
+    else if (new_scroll > max_scroll) {
+        new_scroll = max_scroll;
+    }
+    this->scroll_y = new_scroll;
+}
+
+void MangaGrid::EnsureSelectedVisible() {
+    const auto row = static_cast<s32>(this->selected_index) / this->columns;
+    const auto row_h = this->GetRowHeight();
+    const auto card_h = this->GetCardHeight();
+    const auto card_top = row * row_h;
+    const auto card_bottom = card_top + card_h;
+
+    if (card_top < this->scroll_y) {
+        this->scroll_y = card_top;
+    }
+    else if (card_bottom > (this->scroll_y + this->GetContentHeight())) {
+        this->scroll_y = card_bottom - this->GetContentHeight();
+    }
+
+    const auto max_scroll = this->GetMaxScrollY();
+    if (this->scroll_y > max_scroll) {
+        this->scroll_y = max_scroll;
+    }
+    if (this->scroll_y < 0) {
+        this->scroll_y = 0;
     }
 }
 
@@ -64,17 +96,59 @@ void MangaGrid::ResetCardMarquee(const size_t index) {
     card.marquee_delay = 0;
 }
 
+void MangaGrid::SelectIndex(const size_t index) {
+    this->ResetCardMarquee(this->selected_index);
+    this->selected_index = index;
+    this->ResetCardMarquee(this->selected_index);
+}
+
 void MangaGrid::MoveSelection(const s32 delta_index) {
     const auto new_index = static_cast<s32>(this->selected_index) + delta_index;
     if ((new_index < 0) || (static_cast<size_t>(new_index) >= this->cards.size())) {
         return;
     }
 
-    this->ResetCardMarquee(this->selected_index);
-    this->selected_index = static_cast<size_t>(new_index);
-    this->ResetCardMarquee(this->selected_index);
-    this->EnsureSelectedRowVisible();
-    this->UpdatePageIndicator();
+    this->SelectIndex(static_cast<size_t>(new_index));
+    this->EnsureSelectedVisible();
+}
+
+void MangaGrid::HandleTap(const s32 touch_x, const s32 touch_y) {
+    const auto origin_x = this->GetProcessedX() + MangaGrid::GridPadding;
+    const auto origin_y = this->GetProcessedY() + MangaGrid::GridPadding;
+
+    const auto rel_y = touch_y - origin_y + this->scroll_y;
+    if (rel_y < 0) {
+        return;
+    }
+
+    const auto row_h = this->GetRowHeight();
+    const auto card_h = this->GetCardHeight();
+    const auto row = rel_y / row_h;
+    if ((rel_y - (row * row_h)) >= card_h) {
+        return; // Tapped in the gap between rows.
+    }
+
+    const auto rel_x = touch_x - origin_x;
+    if (rel_x < 0) {
+        return;
+    }
+
+    const auto card_w = this->GetCardWidth();
+    const auto column_stride = card_w + MangaGrid::CardSpacing;
+    const auto col = rel_x / column_stride;
+    if ((col >= this->columns) || ((rel_x - (col * column_stride)) >= card_w)) {
+        return; // Tapped in the gap between columns, or past the last one.
+    }
+
+    const auto index = static_cast<size_t>((row * this->columns) + col);
+    if (index >= this->cards.size()) {
+        return;
+    }
+
+    this->SelectIndex(index);
+    if (this->on_item_selected) {
+        this->on_item_selected(index);
+    }
 }
 
 void MangaGrid::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, const s32 y) {
@@ -86,20 +160,30 @@ void MangaGrid::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, con
     const auto card_h = this->GetCardHeight();
     const auto row_h = this->GetRowHeight();
     const auto thumbnail_h = card_h - MangaGrid::TitleAreaHeight;
-    const auto rows_to_show = this->GetRowsToShow();
+    const auto row_count = this->GetRowCount();
 
-    const auto row_count = static_cast<s32>((this->cards.size() + this->columns - 1) / this->columns);
-    const auto last_row = std::min(row_count, this->first_visible_row + rows_to_show);
+    const auto renderer = pu::ui::render::GetMainRenderer();
+    const SDL_Rect clip_rect = { x, y, this->w, this->h };
+    SDL_RenderSetClipRect(renderer, &clip_rect);
 
-    for (auto row = this->first_visible_row; row < last_row; row++) {
-        const auto card_y = y + ((row - this->first_visible_row) * row_h);
+    const auto content_x = x + MangaGrid::GridPadding;
+    const auto content_y = y + MangaGrid::GridPadding;
+    const auto content_bottom = content_y + this->GetContentHeight();
+
+    const auto first_row = this->scroll_y / row_h;
+    for (auto row = first_row; row < row_count; row++) {
+        const auto card_y = content_y + (row * row_h) - this->scroll_y;
+        if (card_y >= content_bottom) {
+            break;
+        }
+
         for (s32 col = 0; col < this->columns; col++) {
             const size_t index = (static_cast<size_t>(row) * this->columns) + col;
             if (index >= this->cards.size()) {
                 break;
             }
 
-            const auto card_x = x + (col * (card_w + MangaGrid::CardSpacing));
+            const auto card_x = content_x + (col * (card_w + MangaGrid::CardSpacing));
             auto &card = this->cards.at(index);
             const auto is_selected = (index == this->selected_index);
 
@@ -158,7 +242,7 @@ void MangaGrid::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, con
         }
     }
 
-    this->RenderPageIndicator(drawer, x, y);
+    SDL_RenderSetClipRect(renderer, nullptr);
 }
 
 void MangaGrid::RenderThumbnailCover(pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h) {
@@ -199,27 +283,40 @@ void MangaGrid::RenderThumbnailCover(pu::sdl2::TextureHandle::Ref thumbnail, con
     SDL_RenderCopy(pu::ui::render::GetMainRenderer(), tex, &src_rect, &dst_rect);
 }
 
-void MangaGrid::RenderPageIndicator(pu::ui::render::Renderer::Ref &drawer, const s32 x, const s32 y) {
-    if (this->page_indicator_tex == nullptr) {
+void MangaGrid::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
+    if (this->cards.empty()) {
         return;
     }
 
-    const auto tex = this->page_indicator_tex->Get();
-    const auto text_w = pu::ui::render::GetTextureWidth(tex);
-    const auto text_h = pu::ui::render::GetTextureHeight(tex);
+    if (!touch_pos.IsEmpty()) {
+        if (!this->touch_active) {
+            this->touch_active = true;
+            this->touch_moved = false;
+            this->touch_start_x = touch_pos.x;
+            this->touch_start_y = touch_pos.y;
+            this->touch_last_y = touch_pos.y;
+        }
+        else {
+            const auto frame_delta = touch_pos.y - this->touch_last_y;
+            if (frame_delta != 0) {
+                this->ScrollBy(-frame_delta);
+                this->touch_last_y = touch_pos.y;
+            }
 
-    const auto padding = MangaGrid::PageIndicatorPadding;
-    const auto bg_w = text_w + (padding * 2);
-    const auto bg_h = text_h + (padding * 2);
-    const auto bg_x = x + this->w - bg_w;
-    const auto bg_y = y + this->h - bg_h;
+            const auto total_delta = touch_pos.y - this->touch_start_y;
+            const auto abs_total_delta = (total_delta < 0) ? -total_delta : total_delta;
+            if (abs_total_delta >= MangaGrid::TapMoveTolerance) {
+                this->touch_moved = true;
+            }
+        }
+        return;
+    }
 
-    drawer->RenderRoundedRectangleFill(MangaGrid::PageIndicatorBackgroundColor, bg_x, bg_y, bg_w, bg_h, MangaGrid::PageIndicatorBorderRadius);
-    drawer->RenderTexture(tex, bg_x + padding, bg_y + padding);
-}
-
-void MangaGrid::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
-    if (this->cards.empty()) {
+    if (this->touch_active) {
+        if (!this->touch_moved) {
+            this->HandleTap(this->touch_start_x, this->touch_start_y);
+        }
+        this->touch_active = false;
         return;
     }
 

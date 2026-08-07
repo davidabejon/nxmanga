@@ -7,8 +7,8 @@
 
 // A focusable grid of cover cards (thumbnail + title), navigated with the
 // d-pad/stick like pu::ui::elm::Menu, but arranged in rows/columns instead of
-// a single column. Scrolls by whole rows so a row is either fully visible or
-// fully hidden, never partially clipped.
+// a single column. Scrolls continuously by pixels (clipped to its bounds via
+// SDL_RenderSetClipRect), like a normal scrollable list.
 class MangaGrid : public pu::ui::elm::Element {
     public:
         using OnItemSelected = std::function<void(const size_t index)>;
@@ -69,26 +69,32 @@ class MangaGrid : public pu::ui::elm::Element {
         static constexpr s32 CardRadius = 18;
         static constexpr s32 CardFrameMargin = 10;
         static constexpr s32 FocusOutlineThickness = 4;
+        // Inner margin kept between the grid's own bounds and the cards, so
+        // the focus outline (which is drawn a few pixels outside the card)
+        // always has room and never gets cut by the grid's clip rect.
+        static constexpr s32 GridPadding = 8;
         static constexpr pu::ui::Color CardColor = pu::ui::Color(230, 230, 230, 0xFF);
         static constexpr pu::ui::Color FocusOutlineColor = pu::ui::Color(30, 100, 200, 0xFF);
         static constexpr pu::ui::Color TitleColor = pu::ui::Color(20, 20, 20, 0xFF);
 
-        static constexpr s32 PageIndicatorPadding = 10;
-        static constexpr s32 PageIndicatorBorderRadius = 14;
-        static constexpr pu::ui::Color PageIndicatorBackgroundColor = pu::ui::Color(0, 0, 0, 160);
-        static constexpr pu::ui::Color PageIndicatorTextColor = pu::ui::Color(255, 255, 255, 0xFF);
+        // Maximum finger movement, in pixels, still considered a tap rather
+        // than the start of a drag.
+        static constexpr s32 TapMoveTolerance = 12;
 
         s32 GetCardWidth();
         s32 GetCardHeight();
         s32 GetRowHeight();
-        s32 GetRowsToShow();
+        s32 GetRowCount();
+        s32 GetContentHeight();
+        s32 GetMaxScrollY();
         s32 GetTitleAreaWidth();
+        void SelectIndex(const size_t index);
         void MoveSelection(const s32 delta_index);
-        void EnsureSelectedRowVisible();
+        void EnsureSelectedVisible();
+        void ScrollBy(const s32 delta_y);
         void ResetCardMarquee(const size_t index);
-        void UpdatePageIndicator();
-        void RenderPageIndicator(pu::ui::render::Renderer::Ref &drawer, const s32 x, const s32 y);
         static void RenderThumbnailCover(pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h);
+        void HandleTap(const s32 touch_x, const s32 touch_y);
 
         s32 x;
         s32 y;
@@ -96,8 +102,12 @@ class MangaGrid : public pu::ui::elm::Element {
         s32 h;
         s32 columns;
         size_t selected_index;
-        s32 first_visible_row;
+        s32 scroll_y;
         std::vector<Card> cards;
         OnItemSelected on_item_selected;
-        pu::sdl2::TextureHandle::Ref page_indicator_tex;
+        bool touch_active;
+        bool touch_moved;
+        s32 touch_start_x;
+        s32 touch_start_y;
+        s32 touch_last_y;
 };
