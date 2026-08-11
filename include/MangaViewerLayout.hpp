@@ -1,11 +1,13 @@
 #pragma once
 
 #include <pu/Plutonium>
+#include <CascadePagePrefetcher.hpp>
 #include <RoundedRectangle.hpp>
 #include <SideMenu.hpp>
 #include <manga/MangaSource.hpp>
 #include <Settings.hpp>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -58,6 +60,11 @@ class MangaViewerLayout : public pu::ui::Layout {
         // seeking to a deep saved page, so resuming far into a long chapter
         // doesn't decode hundreds of pages synchronously in one frame.
         static constexpr s32 CascadeCatchupPagesPerFrame = 4;
+        // How many pages beyond the last committed/reloaded one to keep
+        // requested from CascadePagePrefetcher at all times, so its
+        // background decode has finished (or is well underway) by the time
+        // LoadCascadePage/ReloadCascadePageTexture actually need it.
+        static constexpr u32 CascadePrefetchAheadCount = 3;
 
         void LoadPage(const u32 index);
         void ApplyViewMode();
@@ -114,6 +121,11 @@ class MangaViewerLayout : public pu::ui::Layout {
         // bounded regardless of chapter length.
         void UpdateCascadeTextures();
         void UpdateCurrentPageFromCascadeScroll();
+        // Requests background decoding for the next few not-yet-loaded
+        // pages beyond cascade_loaded_count. Called every time a page gets
+        // committed, so the background thread always stays a few pages
+        // ahead of whatever's actually been laid out.
+        void PrefetchCascadePagesAhead();
 
         std::string manga_path;
         // True once this manga was already fully read when it was opened, so
@@ -121,6 +133,10 @@ class MangaViewerLayout : public pu::ui::Layout {
         // page again) never overwrites its saved completed progress.
         bool progress_tracking_suspended;
         manga::MangaSourcePtr source;
+        // Declared after source so it's always destroyed (stopping its
+        // worker thread) before source is, since it reads from it on that
+        // thread for as long as it's alive.
+        std::unique_ptr<CascadePagePrefetcher> cascade_prefetcher;
         size_t page_count;
         u32 current_page;
         ViewMode mode;

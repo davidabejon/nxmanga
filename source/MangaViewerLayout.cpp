@@ -1,6 +1,7 @@
 #include <MangaViewerLayout.hpp>
 #include <manga/ReadingProgress.hpp>
 #include <Lang.hpp>
+#include <algorithm>
 #include <cmath>
 
 MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), manga_path(manga_path), progress_tracking_suspended(false), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), cascade_mode(false), cascade_catching_up(false), cascade_loaded_count(0), cascade_total_height(0), cascade_zoom_width(0), cascade_scroll_x(0), cascade_max_scroll_x(0), cascade_center_offset_x(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
@@ -578,6 +579,14 @@ void MangaViewerLayout::EnterCascadeMode() {
     this->cascade_mode = true;
     this->pageImage->SetVisible(false);
 
+    // Any previous prefetcher's worker thread must be fully stopped before
+    // a new one starts (both would otherwise read this->source at once,
+    // which isn't safe for every source implementation), so this always
+    // tears down and replaces it, never reuses one across cascade sessions.
+    this->cascade_prefetcher.reset();
+    this->cascade_prefetcher = std::make_unique<CascadePagePrefetcher>(this->source.get());
+    this->PrefetchCascadePagesAhead();
+
     // Jumping straight to current_page (single-page mode, or a saved resume
     // position) can mean loading far more than a screen's worth of pages
     // sequentially, and LoadCascadePage fully decodes each one just to
@@ -619,6 +628,10 @@ void MangaViewerLayout::AdvanceCascadeCatchup() {
 
 void MangaViewerLayout::LeaveCascadeMode() {
     this->cascade_mode = false;
+    // Stops the background worker (joining it) before LoadPage below reads
+    // from this->source on the main thread: the two must never overlap.
+    this->cascade_prefetcher.reset();
+
     for (auto &image : this->cascade_images) {
         image->SetVisible(false);
         // Frees the decoded texture; heights/offsets stay cached so
@@ -654,10 +667,13 @@ void MangaViewerLayout::LoadCascadePage(const u32 index) {
         return;
     }
 
+    // Blocks only if cascade_prefetcher hasn't finished decoding this page
+    // yet — normally it already has, having been requested (by an earlier
+    // call's PrefetchCascadePagesAhead, below) well before this point.
     s32 height = 0;
-    const auto data = this->source->ReadPage(index);
-    if (!data.empty()) {
-        auto tex = pu::ui::render::LoadImageFromBuffer(data.data(), data.size());
+    auto surface = this->cascade_prefetcher->TakeDecoded(index);
+    if (surface != nullptr) {
+        auto tex = pu::ui::render::ConvertToTexture(surface);
         if (tex != nullptr) {
             const auto tex_w = pu::ui::render::GetTextureWidth(tex);
             const auto tex_h = pu::ui::render::GetTextureHeight(tex);
@@ -674,15 +690,24 @@ void MangaViewerLayout::LoadCascadePage(const u32 index) {
     this->cascade_heights.at(index) = height;
     this->cascade_total_height += height;
     this->cascade_loaded_count = index + 1;
+
+    this->PrefetchCascadePagesAhead();
+}
+
+void MangaViewerLayout::PrefetchCascadePagesAhead() {
+    const auto target = std::min(static_cast<u32>(this->page_count), this->cascade_loaded_count + MangaViewerLayout::CascadePrefetchAheadCount);
+    for (auto i = this->cascade_loaded_count; i < target; i++) {
+        this->cascade_prefetcher->RequestAhead(i);
+    }
 }
 
 void MangaViewerLayout::ReloadCascadePageTexture(const u32 index) {
-    const auto data = this->source->ReadPage(index);
-    if (data.empty()) {
+    auto surface = this->cascade_prefetcher->TakeDecoded(index);
+    if (surface == nullptr) {
         return;
     }
 
-    auto tex = pu::ui::render::LoadImageFromBuffer(data.data(), data.size());
+    auto tex = pu::ui::render::ConvertToTexture(surface);
     if (tex == nullptr) {
         return;
     }
@@ -802,6 +827,13 @@ void MangaViewerLayout::UpdateCascadeTextures() {
     const auto logical_h = this->GetLogicalScreenHeight();
     const auto keep_above = this->scroll_y - (logical_h * MangaViewerLayout::CascadeUnloadAboveScreens);
     const auto keep_below = this->scroll_y + (logical_h * MangaViewerLayout::CascadeLoadAheadScreens);
+    // A screen further out than keep_above/keep_below: pages here aren't
+    // due to reload yet, but requesting their decode now (instead of only
+    // once they're actually within keep_above/keep_below) gives the
+    // background thread a head start, the same way LoadCascadePage's own
+    // forward prefetch does for pages reached for the very first time.
+    const auto prefetch_above = keep_above - logical_h;
+    const auto prefetch_below = keep_below + logical_h;
 
     for (u32 i = 0; i < this->cascade_loaded_count; i++) {
         auto &image = this->cascade_images.at(i);
@@ -815,6 +847,9 @@ void MangaViewerLayout::UpdateCascadeTextures() {
         }
         else if (!in_range && image->IsImageValid()) {
             image->SetImage(nullptr);
+        }
+        else if (!in_range && !image->IsImageValid() && (page_bottom >= prefetch_above) && (page_top <= prefetch_below)) {
+            this->cascade_prefetcher->RequestAhead(i);
         }
     }
 }
