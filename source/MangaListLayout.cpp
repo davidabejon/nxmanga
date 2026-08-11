@@ -153,7 +153,18 @@ void MangaListLayout::LoadNextPendingCover() {
     }
 
     const auto &path = this->pending_paths.at(this->pending_index);
-    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(path), manga::IsFullyRead(path));
+    const auto completed = manga::IsFullyRead(path);
+
+    // Only a leaf manga/chapter has a single page counter to show progress
+    // for; a series folder aggregates several chapters, each with its own.
+    bool in_progress = false;
+    manga::ReadingProgress progress;
+    if (!completed && manga::IsLeafManga(path)) {
+        progress = manga::GetProgress(path);
+        in_progress = progress.page_count > 0;
+    }
+
+    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(path), completed, in_progress, progress.current_page, progress.page_count);
     this->pending_index++;
 
     if (this->pending_index >= this->pending_paths.size()) {
