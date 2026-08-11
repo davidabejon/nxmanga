@@ -1,5 +1,7 @@
 #include <MangaGrid.hpp>
+#include <Lang.hpp>
 #include <algorithm>
+#include <cmath>
 
 MangaGrid::MangaGrid(const s32 x, const s32 y, const s32 width, const s32 height, const s32 columns) : Element(), x(x), y(y), w(width), h(height), columns(columns), selected_index(0), scroll_y(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_y(0) {}
 
@@ -40,13 +42,34 @@ s32 MangaGrid::GetTitleAreaWidth() {
     return this->GetCardWidth() - (MangaGrid::TitleHorizontalPadding * 2);
 }
 
-void MangaGrid::AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail) {
+pu::sdl2::TextureHandle::Ref MangaGrid::BuildProgressTexture(const bool completed, const bool in_progress, const u32 current_page, const size_t page_count) {
+    if (completed || !in_progress) {
+        return nullptr;
+    }
+
+    const auto progress_text = std::to_string(current_page + 1) + "/" + std::to_string(page_count);
+    return pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small), progress_text, MangaGrid::CompletedBadgeCheckColor));
+}
+
+void MangaGrid::AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count) {
     const auto font_name = pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::MediumLarge);
     const auto title_area_w = static_cast<u32>(this->GetTitleAreaWidth());
 
     auto clamped_title_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(font_name, title, MangaGrid::TitleColor, title_area_w));
     auto full_title_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(font_name, title, MangaGrid::TitleColor));
-    this->cards.push_back({thumbnail, clamped_title_tex, full_title_tex, 0, 0});
+    auto progress_tex = MangaGrid::BuildProgressTexture(completed, in_progress, current_page, page_count);
+
+    this->cards.push_back({thumbnail, clamped_title_tex, full_title_tex, 0, 0, completed, progress_tex});
+}
+
+void MangaGrid::UpdateItemStatus(const size_t index, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count) {
+    if (index >= this->cards.size()) {
+        return;
+    }
+
+    auto &card = this->cards.at(index);
+    card.completed = completed;
+    card.progress_tex = MangaGrid::BuildProgressTexture(completed, in_progress, current_page, page_count);
 }
 
 void MangaGrid::ClearItems() {
@@ -201,6 +224,13 @@ void MangaGrid::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, con
             const auto margin = MangaGrid::CardFrameMargin;
             MangaGrid::RenderThumbnailCover(drawer, card.thumbnail, card_x + margin, card_y + margin, card_w - (margin * 2), thumbnail_h - (margin * 2));
 
+            if (card.completed) {
+                MangaGrid::RenderCompletedBadge(drawer, card_x, card_y, card_w);
+            }
+            else if (card.progress_tex != nullptr) {
+                MangaGrid::RenderProgressBadge(drawer, card_x, card_y, card_w, card.progress_tex);
+            }
+
             const auto title_area_w = card_w - (MangaGrid::TitleHorizontalPadding * 2);
             const auto full_title_w = (card.full_title_tex != nullptr) ? pu::ui::render::GetTextureWidth(card.full_title_tex->Get()) : 0;
             const auto title_overflows = full_title_w > title_area_w;
@@ -255,7 +285,7 @@ void MangaGrid::RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::
 
         static pu::sdl2::TextureHandle::Ref mark_tex = nullptr;
         if (mark_tex == nullptr) {
-            mark_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large), "?", MangaGrid::ThumbnailPlaceholderMarkColor));
+            mark_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large), lang::Get("manga_grid.cover_placeholder"), MangaGrid::ThumbnailPlaceholderMarkColor));
         }
 
         const auto tex = mark_tex->Get();
@@ -298,8 +328,76 @@ void MangaGrid::RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::
     SDL_RenderCopy(pu::ui::render::GetMainRenderer(), tex, &src_rect, &dst_rect);
 }
 
+namespace {
+
+    // Draws a line with actual width (SDL_RenderDrawLine is always 1px) by
+    // offsetting several copies of it along its own perpendicular, rather
+    // than along x/y, so it thickens evenly regardless of the line's angle.
+    void RenderThickLine(SDL_Renderer *renderer, const double x1, const double y1, const double x2, const double y2, const s32 thickness) {
+        const auto dx = x2 - x1;
+        const auto dy = y2 - y1;
+        const auto length = std::sqrt((dx * dx) + (dy * dy));
+        if (length <= 0.0) {
+            return;
+        }
+
+        const auto perp_x = -dy / length;
+        const auto perp_y = dx / length;
+        const auto half = (thickness - 1) / 2.0;
+
+        for (s32 i = 0; i < thickness; i++) {
+            const auto offset = i - half;
+            const auto ox = perp_x * offset;
+            const auto oy = perp_y * offset;
+            SDL_RenderDrawLine(renderer, static_cast<s32>(x1 + ox), static_cast<s32>(y1 + oy), static_cast<s32>(x2 + ox), static_cast<s32>(y2 + oy));
+        }
+    }
+
+}
+
+void MangaGrid::RenderCompletedBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w) {
+    const auto radius = MangaGrid::CompletedBadgeRadius;
+    const auto center_x = card_x + card_w - MangaGrid::CompletedBadgeMargin - radius;
+    const auto center_y = card_y + MangaGrid::CompletedBadgeMargin + radius;
+
+    drawer->RenderRoundedRectangleFill(MangaGrid::CompletedBadgeColor, center_x - radius, center_y - radius, radius * 2, radius * 2, radius);
+
+    const auto renderer = pu::ui::render::GetMainRenderer();
+    SDL_SetRenderDrawColor(renderer, MangaGrid::CompletedBadgeCheckColor.r, MangaGrid::CompletedBadgeCheckColor.g, MangaGrid::CompletedBadgeCheckColor.b, MangaGrid::CompletedBadgeCheckColor.a);
+
+    // A simple check mark: a short stroke down-right, then a longer stroke
+    // up-right, both relative to the badge's own radius so it scales with it.
+    const auto ax = center_x - (radius * 0.5);
+    const auto ay = center_y;
+    const auto bx = center_x - (radius * 0.1);
+    const auto by = center_y + (radius * 0.35);
+    const auto cx = center_x + (radius * 0.5);
+    const auto cy = center_y - (radius * 0.35);
+
+    RenderThickLine(renderer, ax, ay, bx, by, MangaGrid::CompletedBadgeCheckThickness);
+    RenderThickLine(renderer, bx, by, cx, cy, MangaGrid::CompletedBadgeCheckThickness);
+}
+
+void MangaGrid::RenderProgressBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w, pu::sdl2::TextureHandle::Ref progress_tex) {
+    if (progress_tex == nullptr) {
+        return;
+    }
+
+    const auto tex = progress_tex->Get();
+    const auto text_w = pu::ui::render::GetTextureWidth(tex);
+    const auto text_h = pu::ui::render::GetTextureHeight(tex);
+
+    const auto badge_w = text_w + (MangaGrid::ProgressBadgeHorizontalPadding * 2);
+    const auto badge_h = text_h + (MangaGrid::ProgressBadgeVerticalPadding * 2);
+    const auto badge_x = card_x + card_w - MangaGrid::ProgressBadgeMargin - badge_w;
+    const auto badge_y = card_y + MangaGrid::ProgressBadgeMargin;
+
+    drawer->RenderRoundedRectangleFill(MangaGrid::CompletedBadgeColor, badge_x, badge_y, badge_w, badge_h, MangaGrid::ProgressBadgeRadius);
+    drawer->RenderTexture(tex, badge_x + MangaGrid::ProgressBadgeHorizontalPadding, badge_y + MangaGrid::ProgressBadgeVerticalPadding);
+}
+
 void MangaGrid::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
-    if (this->cards.empty()) {
+    if (!this->input_enabled || this->cards.empty()) {
         return;
     }
 

@@ -36,8 +36,27 @@ class MangaGrid : public pu::ui::elm::Element {
             return this->cards.empty();
         }
 
-        void AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail);
+        inline size_t GetSelectedIndex() {
+            return this->selected_index;
+        }
+
+        // Lets an owning Layout keep the grid on screen (e.g. dimmed behind
+        // an overlay) while ignoring input, instead of hiding it outright
+        // via SetVisible, which would also stop it from rendering.
+        inline void SetInputEnabled(const bool enabled) {
+            this->input_enabled = enabled;
+        }
+
+        // in_progress marks a manga/chapter that's been started but not
+        // finished, showing a "current_page/page_count" badge (current_page
+        // is 0-based, page_count the total); ignored when completed is true.
+        void AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count);
         void ClearItems();
+
+        // Updates an already-added item's completed/in-progress badge in
+        // place (e.g. after the owner marks it as read/unread), without
+        // touching its thumbnail or title.
+        void UpdateItemStatus(const size_t index, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count);
 
         inline void SetOnItemSelected(OnItemSelected on_item_selected) {
             this->on_item_selected = on_item_selected;
@@ -57,6 +76,13 @@ class MangaGrid : public pu::ui::elm::Element {
             pu::sdl2::TextureHandle::Ref full_title_tex;
             s32 marquee_x;
             s32 marquee_delay;
+            // True if this manga/chapter (or, for a series folder, every
+            // entry under it) has been read all the way to its last page.
+            bool completed;
+            // Pre-rendered "current/total" label for a manga/chapter that's
+            // been started but not finished, or nullptr if there's none to
+            // show (either completed, or never opened).
+            pu::sdl2::TextureHandle::Ref progress_tex;
         };
 
         static constexpr s32 CardSpacing = 24;
@@ -78,6 +104,21 @@ class MangaGrid : public pu::ui::elm::Element {
         static constexpr pu::ui::Color TitleColor = pu::ui::Color(20, 20, 20, 0xFF);
         static constexpr pu::ui::Color ThumbnailPlaceholderColor = pu::ui::Color(200, 200, 200, 0xFF);
         static constexpr pu::ui::Color ThumbnailPlaceholderMarkColor = pu::ui::Color(130, 130, 130, 0xFF);
+        static constexpr s32 CompletedBadgeMargin = 18;
+        static constexpr s32 CompletedBadgeRadius = 32;
+        static constexpr s32 CompletedBadgeCheckThickness = 5;
+        // A lighter tint of FocusOutlineColor's blue, so the badge still
+        // reads as part of the grid's accent language without looking as
+        // heavy/dark as the focus outline itself.
+        static constexpr pu::ui::Color CompletedBadgeColor = pu::ui::Color(90, 170, 240, 0xFF);
+        static constexpr pu::ui::Color CompletedBadgeCheckColor = pu::ui::Color(255, 255, 255, 0xFF);
+        // Same corner/margin as the completed badge (the two never show at
+        // once), but sized to fit its "current/total" text instead of a
+        // fixed circle.
+        static constexpr s32 ProgressBadgeMargin = 18;
+        static constexpr s32 ProgressBadgeHorizontalPadding = 14;
+        static constexpr s32 ProgressBadgeVerticalPadding = 8;
+        static constexpr s32 ProgressBadgeRadius = 16;
 
         // Maximum finger movement, in pixels, still considered a tap rather
         // than the start of a drag.
@@ -95,7 +136,10 @@ class MangaGrid : public pu::ui::elm::Element {
         void EnsureSelectedVisible();
         void ScrollBy(const s32 delta_y);
         void ResetCardMarquee(const size_t index);
+        static pu::sdl2::TextureHandle::Ref BuildProgressTexture(const bool completed, const bool in_progress, const u32 current_page, const size_t page_count);
         static void RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h);
+        static void RenderCompletedBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w);
+        static void RenderProgressBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w, pu::sdl2::TextureHandle::Ref progress_tex);
         void HandleTap(const s32 touch_x, const s32 touch_y);
 
         s32 x;
@@ -103,6 +147,7 @@ class MangaGrid : public pu::ui::elm::Element {
         s32 w;
         s32 h;
         s32 columns;
+        bool input_enabled = true;
         size_t selected_index;
         s32 scroll_y;
         std::vector<Card> cards;

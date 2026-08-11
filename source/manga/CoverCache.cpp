@@ -1,4 +1,5 @@
 #include <manga/CoverCache.hpp>
+#include <manga/PathHash.hpp>
 #include <fstream>
 #include <unordered_map>
 #include <sys/stat.h>
@@ -12,24 +13,8 @@ namespace manga {
         std::unordered_map<std::string, std::vector<uint8_t>> g_MemoryCache;
         bool g_CacheDirReady = false;
 
-        std::string HashKey(const std::string &key) {
-            uint64_t hash = 1469598103934665603ULL; // FNV-1a 64-bit offset basis
-            for (const auto c : key) {
-                hash ^= static_cast<uint8_t>(c);
-                hash *= 1099511628211ULL; // FNV-1a 64-bit prime
-            }
-
-            static const char digits[] = "0123456789abcdef";
-            std::string result(16, '0');
-            for (int i = 15; i >= 0; i--) {
-                result[static_cast<size_t>(i)] = digits[hash & 0xF];
-                hash >>= 4;
-            }
-            return result;
-        }
-
         std::string GetCacheFilePath(const std::string &key) {
-            return std::string(CacheDirPath) + "/" + HashKey(key) + ".cache";
+            return std::string(CacheDirPath) + "/" + HashPath(key) + ".cache";
         }
 
         void EnsureCacheDirExists() {

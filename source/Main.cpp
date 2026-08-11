@@ -2,6 +2,7 @@
 
 int main() {
     auto renderer_opts = pu::ui::render::RendererInitOptions(SDL_INIT_EVERYTHING, pu::ui::render::RendererHardwareFlags);
+    renderer_opts.UseRomfs();
     renderer_opts.UseImage(pu::ui::render::ImgAllFlags);
     renderer_opts.SetPlServiceType(PlServiceType_User);
     renderer_opts.AddDefaultAllSharedFonts();
