@@ -46,6 +46,11 @@ namespace manga {
             return progress;
         }
 
+        void ClearProgress(const std::string &path) {
+            g_MemoryCache.erase(path);
+            std::remove(GetProgressFilePath(path).c_str());
+        }
+
     }
 
     ReadingProgress GetProgress(const std::string &path) {
@@ -81,22 +86,68 @@ namespace manga {
         return (progress.page_count > 0) && ((progress.current_page + 1) >= progress.page_count);
     }
 
-    bool IsFullyRead(const std::string &path) {
+    ReadStatus GetReadStatus(const std::string &path) {
         if (IsLeafManga(path)) {
-            return IsCompleted(path);
+            if (IsCompleted(path)) {
+                return ReadStatus::Completed;
+            }
+            return (GetProgress(path).page_count > 0) ? ReadStatus::InProgress : ReadStatus::NotStarted;
         }
 
         const auto entries = ListMangaEntries(path);
         if (entries.empty()) {
-            return false;
+            return ReadStatus::NotStarted;
         }
 
+        auto all_completed = true;
+        auto any_started = false;
         for (const auto &name : entries) {
-            if (!IsFullyRead(path + "/" + name)) {
-                return false;
+            const auto child_status = GetReadStatus(path + "/" + name);
+            if (child_status != ReadStatus::Completed) {
+                all_completed = false;
+            }
+            if (child_status != ReadStatus::NotStarted) {
+                any_started = true;
             }
         }
-        return true;
+
+        if (all_completed) {
+            return ReadStatus::Completed;
+        }
+        return any_started ? ReadStatus::InProgress : ReadStatus::NotStarted;
+    }
+
+    void MarkAsRead(const std::string &path) {
+        if (IsLeafManga(path)) {
+            auto page_count = GetProgress(path).page_count;
+            if (page_count == 0) {
+                const auto source = OpenMangaSource(path);
+                if (source == nullptr) {
+                    return;
+                }
+                page_count = source->GetPageCount();
+            }
+            if (page_count == 0) {
+                return;
+            }
+            SaveProgress(path, static_cast<uint32_t>(page_count - 1), page_count);
+            return;
+        }
+
+        for (const auto &name : ListMangaEntries(path)) {
+            MarkAsRead(path + "/" + name);
+        }
+    }
+
+    void MarkAsUnread(const std::string &path) {
+        if (IsLeafManga(path)) {
+            ClearProgress(path);
+            return;
+        }
+
+        for (const auto &name : ListMangaEntries(path)) {
+            MarkAsUnread(path + "/" + name);
+        }
     }
 
 }

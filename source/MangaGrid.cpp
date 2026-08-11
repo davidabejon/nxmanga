@@ -42,20 +42,34 @@ s32 MangaGrid::GetTitleAreaWidth() {
     return this->GetCardWidth() - (MangaGrid::TitleHorizontalPadding * 2);
 }
 
+pu::sdl2::TextureHandle::Ref MangaGrid::BuildProgressTexture(const bool completed, const bool in_progress, const u32 current_page, const size_t page_count) {
+    if (completed || !in_progress) {
+        return nullptr;
+    }
+
+    const auto progress_text = std::to_string(current_page + 1) + "/" + std::to_string(page_count);
+    return pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small), progress_text, MangaGrid::CompletedBadgeCheckColor));
+}
+
 void MangaGrid::AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count) {
     const auto font_name = pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::MediumLarge);
     const auto title_area_w = static_cast<u32>(this->GetTitleAreaWidth());
 
     auto clamped_title_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(font_name, title, MangaGrid::TitleColor, title_area_w));
     auto full_title_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(font_name, title, MangaGrid::TitleColor));
-
-    pu::sdl2::TextureHandle::Ref progress_tex = nullptr;
-    if (!completed && in_progress) {
-        const auto progress_text = std::to_string(current_page + 1) + "/" + std::to_string(page_count);
-        progress_tex = pu::sdl2::TextureHandle::New(pu::ui::render::RenderText(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small), progress_text, MangaGrid::CompletedBadgeCheckColor));
-    }
+    auto progress_tex = MangaGrid::BuildProgressTexture(completed, in_progress, current_page, page_count);
 
     this->cards.push_back({thumbnail, clamped_title_tex, full_title_tex, 0, 0, completed, progress_tex});
+}
+
+void MangaGrid::UpdateItemStatus(const size_t index, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count) {
+    if (index >= this->cards.size()) {
+        return;
+    }
+
+    auto &card = this->cards.at(index);
+    card.completed = completed;
+    card.progress_tex = MangaGrid::BuildProgressTexture(completed, in_progress, current_page, page_count);
 }
 
 void MangaGrid::ClearItems() {

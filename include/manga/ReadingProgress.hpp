@@ -25,10 +25,26 @@ namespace manga {
     // True if path has saved progress and it reaches its last page.
     bool IsCompleted(const std::string &path);
 
-    // True if path (a leaf manga, or a folder of further manga entries) has
-    // been fully read: for a leaf, equivalent to IsCompleted; for a folder,
-    // true only if every entry under it is also fully read. False for an
-    // empty folder, since nothing in it has been read.
-    bool IsFullyRead(const std::string &path);
+    // Aggregate reading state for path (a leaf manga, or a folder of further
+    // manga entries). For a leaf, this is just its own completion/progress.
+    // For a folder, it's derived from every entry under it: Completed only
+    // if all of them are; NotStarted only if none of them have been opened
+    // (also true for an empty folder); InProgress otherwise.
+    enum class ReadStatus {
+        NotStarted,
+        InProgress,
+        Completed
+    };
+
+    ReadStatus GetReadStatus(const std::string &path);
+
+    // Forces path to be considered fully read: for a leaf, seeks it to its
+    // last page (opening its source to learn the page count, if it hasn't
+    // been opened before); for a folder, does this for every entry under it.
+    void MarkAsRead(const std::string &path);
+
+    // Clears path's saved progress, resetting it back to never opened: for
+    // a leaf, clears just its own; for a folder, every entry under it.
+    void MarkAsUnread(const std::string &path);
 
 }

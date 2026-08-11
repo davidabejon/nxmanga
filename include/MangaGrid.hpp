@@ -36,6 +36,10 @@ class MangaGrid : public pu::ui::elm::Element {
             return this->cards.empty();
         }
 
+        inline size_t GetSelectedIndex() {
+            return this->selected_index;
+        }
+
         // Lets an owning Layout keep the grid on screen (e.g. dimmed behind
         // an overlay) while ignoring input, instead of hiding it outright
         // via SetVisible, which would also stop it from rendering.
@@ -48,6 +52,11 @@ class MangaGrid : public pu::ui::elm::Element {
         // is 0-based, page_count the total); ignored when completed is true.
         void AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count);
         void ClearItems();
+
+        // Updates an already-added item's completed/in-progress badge in
+        // place (e.g. after the owner marks it as read/unread), without
+        // touching its thumbnail or title.
+        void UpdateItemStatus(const size_t index, const bool completed, const bool in_progress, const u32 current_page, const size_t page_count);
 
         inline void SetOnItemSelected(OnItemSelected on_item_selected) {
             this->on_item_selected = on_item_selected;
@@ -127,6 +136,7 @@ class MangaGrid : public pu::ui::elm::Element {
         void EnsureSelectedVisible();
         void ScrollBy(const s32 delta_y);
         void ResetCardMarquee(const size_t index);
+        static pu::sdl2::TextureHandle::Ref BuildProgressTexture(const bool completed, const bool in_progress, const u32 current_page, const size_t page_count);
         static void RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h);
         static void RenderCompletedBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w);
         static void RenderProgressBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w, pu::sdl2::TextureHandle::Ref progress_tex);
