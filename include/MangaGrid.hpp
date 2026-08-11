@@ -88,10 +88,13 @@ class MangaGrid : public pu::ui::elm::Element {
         static constexpr pu::ui::Color TitleColor = pu::ui::Color(20, 20, 20, 0xFF);
         static constexpr pu::ui::Color ThumbnailPlaceholderColor = pu::ui::Color(200, 200, 200, 0xFF);
         static constexpr pu::ui::Color ThumbnailPlaceholderMarkColor = pu::ui::Color(130, 130, 130, 0xFF);
-        static constexpr s32 CompletedBadgeMargin = 10;
-        static constexpr s32 CompletedBadgeRadius = 20;
-        static constexpr s32 CompletedBadgeCheckThickness = 3;
-        static constexpr pu::ui::Color CompletedBadgeColor = pu::ui::Color(45, 160, 70, 0xFF);
+        static constexpr s32 CompletedBadgeMargin = 18;
+        static constexpr s32 CompletedBadgeRadius = 32;
+        static constexpr s32 CompletedBadgeCheckThickness = 5;
+        // A lighter tint of FocusOutlineColor's blue, so the badge still
+        // reads as part of the grid's accent language without looking as
+        // heavy/dark as the focus outline itself.
+        static constexpr pu::ui::Color CompletedBadgeColor = pu::ui::Color(90, 170, 240, 0xFF);
         static constexpr pu::ui::Color CompletedBadgeCheckColor = pu::ui::Color(255, 255, 255, 0xFF);
 
         // Maximum finger movement, in pixels, still considered a tap rather
