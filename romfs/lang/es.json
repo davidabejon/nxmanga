@@ -13,7 +13,9 @@
     },
     "manga_list": {
         "no_mangas_found": "No se encontraron mangas en {path}",
-        "settings_hint": "Pulsa X para ver ajustes"
+        "settings_hint": "Pulsa X para ver ajustes",
+        "mark_as_read": "Marcar como leído",
+        "mark_as_unread": "Marcar no leído"
     },
     "manga_viewer": {
         "no_images": "Sin imagenes",

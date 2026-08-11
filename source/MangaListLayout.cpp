@@ -1,6 +1,7 @@
 #include <MangaListLayout.hpp>
 #include <FsUtils.hpp>
 #include <manga/MangaSource.hpp>
+#include <manga/ReadingProgress.hpp>
 #include <Lang.hpp>
 
 namespace {
@@ -17,6 +18,29 @@ namespace {
         }
 
         return pu::sdl2::TextureHandle::New(tex);
+    }
+
+    struct EntryReadStatus {
+        bool completed;
+        bool in_progress;
+        uint32_t current_page;
+        size_t page_count;
+    };
+
+    // Only a leaf manga/chapter has a single page counter to show progress
+    // for; a series folder aggregates several chapters, each with its own.
+    EntryReadStatus ComputeEntryReadStatus(const std::string &path) {
+        EntryReadStatus result{};
+        const auto status = manga::GetReadStatus(path);
+        result.completed = (status == manga::ReadStatus::Completed);
+
+        if (!result.completed && (status == manga::ReadStatus::InProgress) && manga::IsLeafManga(path)) {
+            const auto progress = manga::GetProgress(path);
+            result.in_progress = progress.page_count > 0;
+            result.current_page = progress.current_page;
+            result.page_count = progress.page_count;
+        }
+        return result;
     }
 
 }
@@ -102,28 +126,15 @@ MangaListLayout::MangaListLayout(const std::string &manga_root) : Layout::Layout
 
     this->sideMenu = SideMenu::New(this);
 
-    this->sideMenu->AddItem([this]() {
-        return this->GetOrientationLabel();
-    }, [this]() {
-        const auto orientation = (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? settings::ReadingOrientation::Horizontal : settings::ReadingOrientation::Vertical;
-        settings::SetReadingOrientation(orientation);
-        this->sideMenu->RefreshLabels();
-    });
-
-    this->sideMenu->AddItem([this]() {
-        return this->GetCascadeModeLabel();
-    }, [this]() {
-        settings::SetCascadeMode(!settings::GetCascadeMode());
-        this->sideMenu->RefreshLabels();
-    });
-
-    this->sideMenu->AddItem([]() {
-        return lang::Get("common.side_menu_close");
-    }, [this]() {
-        this->sideMenu->SetOpen(false);
-    });
-
     this->SetOnInput([this](const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
+        // The mark as read/unread option(s) depend on whichever grid entry
+        // is currently selected, which can change while the panel is
+        // closed, so its items are rebuilt fresh right before it opens
+        // rather than once up front.
+        if ((keys_down & HidNpadButton_X) && !this->sideMenu->IsOpen()) {
+            this->RebuildSideMenu();
+        }
+
         const auto menu_consumed = this->sideMenu->HandleInput(keys_down, keys_up, keys_held, touch_pos);
         this->grid->SetInputEnabled(!menu_consumed);
         if (menu_consumed) {
@@ -146,12 +157,75 @@ std::string MangaListLayout::GetCascadeModeLabel() const {
     return settings::GetCascadeMode() ? lang::Get("common.cascade_on") : lang::Get("common.cascade_off");
 }
 
+void MangaListLayout::RefreshGridItemStatus(const size_t index, const std::string &path) {
+    const auto status = ComputeEntryReadStatus(path);
+    this->grid->UpdateItemStatus(index, status.completed, status.in_progress, status.current_page, status.page_count);
+}
+
+void MangaListLayout::RebuildSideMenu() {
+    this->sideMenu->ClearItems();
+
+    if (!this->grid->IsEmpty()) {
+        const auto index = this->grid->GetSelectedIndex();
+        if (index < this->pending_paths.size()) {
+            const auto &path = this->pending_paths.at(index);
+            const auto status = manga::GetReadStatus(path);
+
+            if (status != manga::ReadStatus::Completed) {
+                this->sideMenu->AddItem([]() {
+                    return lang::Get("manga_list.mark_as_read");
+                }, [this, index]() {
+                    const auto &item_path = this->pending_paths.at(index);
+                    manga::MarkAsRead(item_path);
+                    this->RefreshGridItemStatus(index, item_path);
+                    this->sideMenu->SetOpen(false);
+                });
+            }
+
+            if (status != manga::ReadStatus::NotStarted) {
+                this->sideMenu->AddItem([]() {
+                    return lang::Get("manga_list.mark_as_unread");
+                }, [this, index]() {
+                    const auto &item_path = this->pending_paths.at(index);
+                    manga::MarkAsUnread(item_path);
+                    this->RefreshGridItemStatus(index, item_path);
+                    this->sideMenu->SetOpen(false);
+                });
+            }
+        }
+    }
+
+    this->sideMenu->AddItem([this]() {
+        return this->GetOrientationLabel();
+    }, [this]() {
+        const auto orientation = (settings::GetReadingOrientation() == settings::ReadingOrientation::Vertical) ? settings::ReadingOrientation::Horizontal : settings::ReadingOrientation::Vertical;
+        settings::SetReadingOrientation(orientation);
+        this->sideMenu->RefreshLabels();
+    });
+
+    this->sideMenu->AddItem([this]() {
+        return this->GetCascadeModeLabel();
+    }, [this]() {
+        settings::SetCascadeMode(!settings::GetCascadeMode());
+        this->sideMenu->RefreshLabels();
+    });
+
+    this->sideMenu->AddItem([]() {
+        return lang::Get("common.side_menu_close");
+    }, [this]() {
+        this->sideMenu->SetOpen(false);
+    });
+}
+
 void MangaListLayout::LoadNextPendingCover() {
     if (this->pending_index >= this->pending_paths.size()) {
         return;
     }
 
-    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(this->pending_paths.at(this->pending_index)));
+    const auto &path = this->pending_paths.at(this->pending_index);
+    const auto status = ComputeEntryReadStatus(path);
+
+    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(path), status.completed, status.in_progress, status.current_page, status.page_count);
     this->pending_index++;
 
     if (this->pending_index >= this->pending_paths.size()) {

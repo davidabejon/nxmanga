@@ -52,6 +52,8 @@ SideMenu::SideMenu(pu::ui::Layout *owner) : owner(owner), open(false) {
             this->CycleLanguage();
         });
     }
+
+    this->builtinItemCount = this->menu->GetItems().size();
 }
 
 pu::ui::elm::MenuItem::Ref SideMenu::AddItem(LabelProvider get_label, ItemCallback on_selected) {
@@ -64,17 +66,60 @@ pu::ui::elm::MenuItem::Ref SideMenu::AddItem(LabelProvider get_label, ItemCallba
     item->AddOnKey(on_selected, pu::ui::TouchPseudoKey);
     this->menu->AddItem(item);
     this->menu->SetNumberOfItemsToShow(static_cast<s32>(this->menu->GetItems().size()));
+    // Menu::OnRender only lazily (re)loads name textures when its cache is
+    // completely empty, which is only true the very first time it's ever
+    // rendered. Past that point (e.g. after ClearItems() partially refills
+    // it with just the builtin items), it's on AddItem to keep the cache in
+    // sync with the item list itself, or the render loop indexes into it
+    // out of bounds for every item added afterwards.
+    this->menu->ForceReloadItems();
     this->itemLabelProviders.push_back(get_label);
 
     const auto index = this->menu->GetItems().size() - 1;
-    const auto outline_y = this->menu_y + (static_cast<s32>(index) * SideMenu::ItemHeight) + SideMenu::OutlineMarginY;
-    const auto outline_h = SideMenu::ItemHeight - (SideMenu::OutlineMarginY * 2);
-    auto outline = RoundedOutlineRectangle::New(this->menu_item_x, outline_y, this->menu_w, outline_h, SideMenu::OutlineIdleColor, SideMenu::OutlineRadius, SideMenu::OutlineThickness);
-    outline->SetVisible(this->open);
-    this->itemOutlines.push_back(outline);
-    this->owner->Add(outline);
+    if (index < this->itemOutlines.size()) {
+        // Reusing a pool slot left over from before the most recent
+        // ClearItems(): same index means the same position, so it's already
+        // correctly placed, just currently hidden.
+        this->itemOutlines.at(index)->SetVisible(this->open);
+    }
+    else {
+        const auto outline_y = this->menu_y + (static_cast<s32>(index) * SideMenu::ItemHeight) + SideMenu::OutlineMarginY;
+        const auto outline_h = SideMenu::ItemHeight - (SideMenu::OutlineMarginY * 2);
+        auto outline = RoundedOutlineRectangle::New(this->menu_item_x, outline_y, this->menu_w, outline_h, SideMenu::OutlineIdleColor, SideMenu::OutlineRadius, SideMenu::OutlineThickness);
+        outline->SetVisible(this->open);
+        this->itemOutlines.push_back(outline);
+        this->owner->Add(outline);
+    }
 
     return item;
+}
+
+void SideMenu::ClearItems() {
+    // Menu::ClearItems() (unlike just resizing GetItems()'s vector) also
+    // resets its internal selected/scroll indices, which would otherwise be
+    // left stale and potentially out of bounds once fewer items are added
+    // back than there were before. The builtin items (e.g. the language
+    // picker) are saved first and added straight back, since Menu::ClearItems()
+    // would otherwise wipe those too.
+    auto &menu_items = this->menu->GetItems();
+    const std::vector<pu::ui::elm::MenuItem::Ref> builtin_items(menu_items.begin(), menu_items.begin() + this->builtinItemCount);
+    const std::vector<LabelProvider> builtin_label_providers(this->itemLabelProviders.begin(), this->itemLabelProviders.begin() + this->builtinItemCount);
+
+    this->menu->ClearItems();
+    for (auto item : builtin_items) {
+        this->menu->AddItem(item);
+    }
+    this->itemLabelProviders = builtin_label_providers;
+
+    // Outlines can't be removed from the owner Layout, only hidden; SetOpen
+    // already only shows outlines up to the current item count, but hiding
+    // them here too keeps their state consistent even if queried meanwhile.
+    for (size_t i = this->builtinItemCount; i < this->itemOutlines.size(); i++) {
+        this->itemOutlines.at(i)->SetVisible(false);
+    }
+
+    this->menu->SetNumberOfItemsToShow(static_cast<s32>(this->menu->GetItems().size()));
+    this->menu->ForceReloadItems();
 }
 
 void SideMenu::RefreshLabels() {
@@ -127,8 +172,12 @@ void SideMenu::SetOpen(const bool open) {
     this->divider->SetVisible(open);
     this->menu->SetVisible(open);
     this->footer->SetVisible(open);
-    for (auto &outline : this->itemOutlines) {
-        outline->SetVisible(open);
+
+    // Only up to the current item count: the pool can hold more outlines
+    // than that, left over (hidden) from before the last ClearItems().
+    const auto item_count = this->menu->GetItems().size();
+    for (size_t i = 0; i < this->itemOutlines.size(); i++) {
+        this->itemOutlines.at(i)->SetVisible(open && (i < item_count));
     }
 
     if (open) {

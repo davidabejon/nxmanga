@@ -13,7 +13,9 @@
     },
     "manga_list": {
         "no_mangas_found": "No manga found in {path}",
-        "settings_hint": "Press X to view settings"
+        "settings_hint": "Press X to view settings",
+        "mark_as_read": "Mark as read",
+        "mark_as_unread": "Mark as unread"
     },
     "manga_viewer": {
         "no_images": "No images",

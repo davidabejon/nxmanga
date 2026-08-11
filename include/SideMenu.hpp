@@ -32,6 +32,13 @@ class SideMenu {
         // since label refreshes are handled internally via RefreshLabels.
         pu::ui::elm::MenuItem::Ref AddItem(LabelProvider get_label, ItemCallback on_selected);
 
+        // Removes every item added via AddItem (but keeps whatever built-in
+        // items the constructor itself added, like the language picker), so
+        // the owner can rebuild its own items from scratch to reflect state
+        // that could have changed while the panel was closed. Call before
+        // opening the panel, not while it's already open.
+        void ClearItems();
+
         // Re-resolves the title, footer, language item, and every item
         // added via AddItem by calling their LabelProvider again. Call
         // after anything that could change one of those labels (a language
@@ -80,6 +87,14 @@ class SideMenu {
         pu::ui::elm::Rectangle::Ref divider;
         pu::ui::elm::Menu::Ref menu;
         pu::ui::elm::TextBlock::Ref footer;
+        // Position-keyed pool: since a Layout can never have an element
+        // removed from it once added, ClearItems() can't delete outlines
+        // that no longer have a matching item, only hide them; AddItem
+        // reuses whatever's already in the pool at a given index (same
+        // position either way) before creating a new one.
         std::vector<RoundedOutlineRectangle::Ref> itemOutlines;
         std::vector<LabelProvider> itemLabelProviders;
+        // How many leading items were added by the constructor itself
+        // (e.g. the language picker) and so must survive every ClearItems().
+        size_t builtinItemCount;
 };

@@ -54,6 +54,10 @@ class MangaViewerLayout : public pu::ui::Layout {
         // pages regardless of chapter length.
         static constexpr s32 CascadeLoadAheadScreens = 2;
         static constexpr s32 CascadeUnloadAboveScreens = 1;
+        // How many pages EnterCascadeMode's catch-up decodes per frame while
+        // seeking to a deep saved page, so resuming far into a long chapter
+        // doesn't decode hundreds of pages synchronously in one frame.
+        static constexpr s32 CascadeCatchupPagesPerFrame = 4;
 
         void LoadPage(const u32 index);
         void ApplyViewMode();
@@ -84,6 +88,10 @@ class MangaViewerLayout : public pu::ui::Layout {
         std::string GetCascadeModeLabel() const;
         void EnterCascadeMode();
         void LeaveCascadeMode();
+        // Loads a few more cascade pages towards current_page, called from a
+        // render callback until it catches up, instead of EnterCascadeMode
+        // decoding potentially hundreds of pages synchronously in one frame.
+        void AdvanceCascadeCatchup();
         // Tears down and rebuilds all cascade state from scratch, needed
         // after an orientation change since every page's fit-to-width
         // height depends on the (now different) logical screen width.
@@ -107,6 +115,11 @@ class MangaViewerLayout : public pu::ui::Layout {
         void UpdateCascadeTextures();
         void UpdateCurrentPageFromCascadeScroll();
 
+        std::string manga_path;
+        // True once this manga was already fully read when it was opened, so
+        // re-reading it this session (without necessarily reaching the last
+        // page again) never overwrites its saved completed progress.
+        bool progress_tracking_suspended;
         manga::MangaSourcePtr source;
         size_t page_count;
         u32 current_page;
@@ -126,6 +139,10 @@ class MangaViewerLayout : public pu::ui::Layout {
         s32 center_offset_x;
         s32 center_offset_y;
         bool cascade_mode;
+        // True while AdvanceCascadeCatchup still has pages to load before
+        // reaching current_page; set by EnterCascadeMode, cleared once it
+        // catches up (or if the user leaves cascade mode first).
+        bool cascade_catching_up;
         // Parallel, page_count-sized vectors: null/0 until LoadCascadePage
         // reaches that index. Pages load contiguously from 0, so indices
         // below cascade_loaded_count always have a valid height/offset,
@@ -155,6 +172,11 @@ class MangaViewerLayout : public pu::ui::Layout {
         bool touch_had_multitouch;
         OnBack on_back;
         pu::ui::elm::Image::Ref pageImage;
+        // Covers the whole screen while AdvanceCascadeCatchup is still
+        // loading towards current_page, since freshly loaded cascade pages
+        // become visible before UpdateCascadeLayout has positioned them,
+        // which would otherwise flash a misplaced page on screen.
+        pu::ui::elm::Rectangle::Ref cascadeLoadingOverlay;
         RoundedRectangle::Ref pageIndicatorBg;
         pu::ui::elm::TextBlock::Ref pageIndicator;
         SideMenu::Ref sideMenu;
