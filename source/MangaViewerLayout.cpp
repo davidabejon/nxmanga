@@ -1,8 +1,9 @@
 #include <MangaViewerLayout.hpp>
+#include <manga/ReadingProgress.hpp>
 #include <Lang.hpp>
 #include <cmath>
 
-MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), cascade_mode(false), cascade_loaded_count(0), cascade_total_height(0), cascade_zoom_width(0), cascade_scroll_x(0), cascade_max_scroll_x(0), cascade_center_offset_x(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
+MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::Layout(), manga_path(manga_path), progress_tracking_suspended(false), source(manga::OpenMangaSource(manga_path)), page_count(this->source ? this->source->GetPageCount() : 0), current_page(0), mode(ViewMode::Vertical), orientation(settings::GetReadingOrientation()), tex_width(0), tex_height(0), target_size(0), image_width(0), image_height(0), scroll_x(0), scroll_y(0), max_scroll_x(0), max_scroll_y(0), center_offset_x(0), center_offset_y(0), cascade_mode(false), cascade_catching_up(false), cascade_loaded_count(0), cascade_total_height(0), cascade_zoom_width(0), cascade_scroll_x(0), cascade_max_scroll_x(0), cascade_center_offset_x(0), touch_active(false), touch_moved(false), touch_start_x(0), touch_start_y(0), touch_last_x(0), touch_last_y(0), pinch_active(false), pinch_last_distance(0.0), touch_had_multitouch(false) {
     this->SetBackgroundColor(pu::ui::Color(0, 0, 0, 0xFF));
 
     // Pre-create every Image this Layout could ever need (one for
@@ -32,6 +33,24 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
     this->pageIndicator->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
     this->pageIndicatorBg = RoundedRectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
 
+    // Registered once here rather than inside EnterCascadeMode: pu::ui::Layout
+    // has no way to remove a render callback, so registering it there would
+    // add one more permanent no-op closure every time cascade mode toggles on.
+    this->AddRenderCallback([this]() {
+        this->AdvanceCascadeCatchup();
+    });
+
+    // A manga already fully read when opened always restarts at page 0, and
+    // this session never overwrites its saved (completed) progress, even if
+    // the user leaves again without reaching the last page.
+    this->progress_tracking_suspended = manga::IsCompleted(this->manga_path);
+    if ((this->page_count > 0) && !this->progress_tracking_suspended) {
+        const auto progress = manga::GetProgress(this->manga_path);
+        if (progress.page_count > 0) {
+            this->current_page = (progress.current_page < static_cast<u32>(this->page_count)) ? progress.current_page : static_cast<u32>(this->page_count - 1);
+        }
+    }
+
     if (this->page_count == 0) {
         this->SetPageIndicatorText(lang::Get("manga_viewer.no_images"));
     }
@@ -39,7 +58,7 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         this->SetCascadeMode(true);
     }
     else {
-        this->LoadPage(0);
+        this->LoadPage(this->current_page);
     }
 
     this->Add(this->pageIndicatorBg);
@@ -296,6 +315,10 @@ void MangaViewerLayout::LoadPage(const u32 index) {
         this->ApplyCurrentMode();
     }
     this->SetPageIndicatorText(lang::Get("manga_viewer.page_indicator", {{"current", std::to_string(index + 1)}, {"total", std::to_string(this->page_count)}}));
+
+    if (!this->progress_tracking_suspended) {
+        manga::SaveProgress(this->manga_path, this->current_page, this->page_count);
+    }
 }
 
 void MangaViewerLayout::SetPageIndicatorText(const std::string &text) {
@@ -551,14 +574,35 @@ void MangaViewerLayout::EnterCascadeMode() {
     this->cascade_mode = true;
     this->pageImage->SetVisible(false);
 
-    // Loads sequentially up to the page we were on in single-page mode, so
-    // switching modes keeps roughly the same place instead of jumping back
-    // to the very first page.
-    while ((this->cascade_loaded_count <= this->current_page) && (this->cascade_loaded_count < static_cast<u32>(this->page_count))) {
+    // Jumping straight to current_page (single-page mode, or a saved resume
+    // position) can mean loading far more than a screen's worth of pages
+    // sequentially, and LoadCascadePage fully decodes each one just to
+    // measure it — doing that all at once, synchronously, would freeze the
+    // app for as long as it takes to decode every page up to current_page.
+    // AdvanceCascadeCatchup instead spreads that work over several frames.
+    if (this->cascade_loaded_count > this->current_page) {
+        this->SetCascadeScroll(this->cascade_offsets.at(this->current_page));
+        return;
+    }
+
+    this->cascade_catching_up = true;
+    this->SetPageIndicatorText(lang::Get("common.loading"));
+}
+
+void MangaViewerLayout::AdvanceCascadeCatchup() {
+    if (!this->cascade_mode || !this->cascade_catching_up) {
+        this->cascade_catching_up = false;
+        return;
+    }
+
+    for (s32 i = 0; (i < MangaViewerLayout::CascadeCatchupPagesPerFrame) && (this->cascade_loaded_count <= this->current_page) && (this->cascade_loaded_count < static_cast<u32>(this->page_count)); i++) {
         this->LoadCascadePage(this->cascade_loaded_count);
     }
 
-    this->SetCascadeScroll(this->cascade_offsets.at(this->current_page));
+    if (this->cascade_loaded_count > this->current_page) {
+        this->cascade_catching_up = false;
+        this->SetCascadeScroll(this->cascade_offsets.at(this->current_page));
+    }
 }
 
 void MangaViewerLayout::LeaveCascadeMode() {
@@ -774,4 +818,8 @@ void MangaViewerLayout::UpdateCurrentPageFromCascadeScroll() {
         }
     }
     this->SetPageIndicatorText(lang::Get("manga_viewer.page_indicator", {{"current", std::to_string(this->current_page + 1)}, {"total", std::to_string(this->page_count)}}));
+
+    if (!this->progress_tracking_suspended) {
+        manga::SaveProgress(this->manga_path, this->current_page, this->page_count);
+    }
 }

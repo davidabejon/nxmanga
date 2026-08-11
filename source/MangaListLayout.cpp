@@ -1,6 +1,7 @@
 #include <MangaListLayout.hpp>
 #include <FsUtils.hpp>
 #include <manga/MangaSource.hpp>
+#include <manga/ReadingProgress.hpp>
 #include <Lang.hpp>
 
 namespace {
@@ -151,7 +152,8 @@ void MangaListLayout::LoadNextPendingCover() {
         return;
     }
 
-    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(this->pending_paths.at(this->pending_index)));
+    const auto &path = this->pending_paths.at(this->pending_index);
+    this->grid->AddItem(this->pending_names.at(this->pending_index), LoadCoverThumbnail(path), manga::IsFullyRead(path));
     this->pending_index++;
 
     if (this->pending_index >= this->pending_paths.size()) {

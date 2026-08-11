@@ -43,7 +43,7 @@ class MangaGrid : public pu::ui::elm::Element {
             this->input_enabled = enabled;
         }
 
-        void AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail);
+        void AddItem(const std::string &title, pu::sdl2::TextureHandle::Ref thumbnail, const bool completed);
         void ClearItems();
 
         inline void SetOnItemSelected(OnItemSelected on_item_selected) {
@@ -64,6 +64,9 @@ class MangaGrid : public pu::ui::elm::Element {
             pu::sdl2::TextureHandle::Ref full_title_tex;
             s32 marquee_x;
             s32 marquee_delay;
+            // True if this manga/chapter (or, for a series folder, every
+            // entry under it) has been read all the way to its last page.
+            bool completed;
         };
 
         static constexpr s32 CardSpacing = 24;
@@ -85,6 +88,11 @@ class MangaGrid : public pu::ui::elm::Element {
         static constexpr pu::ui::Color TitleColor = pu::ui::Color(20, 20, 20, 0xFF);
         static constexpr pu::ui::Color ThumbnailPlaceholderColor = pu::ui::Color(200, 200, 200, 0xFF);
         static constexpr pu::ui::Color ThumbnailPlaceholderMarkColor = pu::ui::Color(130, 130, 130, 0xFF);
+        static constexpr s32 CompletedBadgeMargin = 10;
+        static constexpr s32 CompletedBadgeRadius = 20;
+        static constexpr s32 CompletedBadgeCheckThickness = 3;
+        static constexpr pu::ui::Color CompletedBadgeColor = pu::ui::Color(45, 160, 70, 0xFF);
+        static constexpr pu::ui::Color CompletedBadgeCheckColor = pu::ui::Color(255, 255, 255, 0xFF);
 
         // Maximum finger movement, in pixels, still considered a tap rather
         // than the start of a drag.
@@ -103,6 +111,7 @@ class MangaGrid : public pu::ui::elm::Element {
         void ScrollBy(const s32 delta_y);
         void ResetCardMarquee(const size_t index);
         static void RenderThumbnailCover(pu::ui::render::Renderer::Ref &drawer, pu::sdl2::TextureHandle::Ref thumbnail, const s32 x, const s32 y, const s32 w, const s32 h);
+        static void RenderCompletedBadge(pu::ui::render::Renderer::Ref &drawer, const s32 card_x, const s32 card_y, const s32 card_w);
         void HandleTap(const s32 touch_x, const s32 touch_y);
 
         s32 x;
