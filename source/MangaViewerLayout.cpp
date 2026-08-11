@@ -29,6 +29,10 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
         this->Add(image);
     }
 
+    this->cascadeLoadingOverlay = pu::ui::elm::Rectangle::New(0, 0, static_cast<s32>(pu::ui::render::ScreenWidth), static_cast<s32>(pu::ui::render::ScreenHeight), pu::ui::Color(0, 0, 0, 0xFF));
+    this->cascadeLoadingOverlay->SetVisible(false);
+    this->Add(this->cascadeLoadingOverlay);
+
     this->pageIndicator = pu::ui::elm::TextBlock::New(1700, 20, "");
     this->pageIndicator->SetColor(pu::ui::Color(255, 255, 255, 0xFF));
     this->pageIndicatorBg = RoundedRectangle::New(0, 0, 0, 0, pu::ui::Color(0, 0, 0, 160), MangaViewerLayout::PageIndicatorBorderRadius);
@@ -585,6 +589,12 @@ void MangaViewerLayout::EnterCascadeMode() {
         return;
     }
 
+    // Hides every cascade page behind a plain black screen until catch-up
+    // finishes and lays them out correctly: LoadCascadePage below makes each
+    // newly decoded page visible immediately, at whatever stale position its
+    // Image last had, so without this a wrong page would flash on screen for
+    // however many frames catch-up takes.
+    this->cascadeLoadingOverlay->SetVisible(true);
     this->cascade_catching_up = true;
     this->SetPageIndicatorText(lang::Get("common.loading"));
 }
@@ -592,6 +602,7 @@ void MangaViewerLayout::EnterCascadeMode() {
 void MangaViewerLayout::AdvanceCascadeCatchup() {
     if (!this->cascade_mode || !this->cascade_catching_up) {
         this->cascade_catching_up = false;
+        this->cascadeLoadingOverlay->SetVisible(false);
         return;
     }
 
@@ -602,6 +613,7 @@ void MangaViewerLayout::AdvanceCascadeCatchup() {
     if (this->cascade_loaded_count > this->current_page) {
         this->cascade_catching_up = false;
         this->SetCascadeScroll(this->cascade_offsets.at(this->current_page));
+        this->cascadeLoadingOverlay->SetVisible(false);
     }
 }
 

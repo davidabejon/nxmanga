@@ -172,6 +172,11 @@ class MangaViewerLayout : public pu::ui::Layout {
         bool touch_had_multitouch;
         OnBack on_back;
         pu::ui::elm::Image::Ref pageImage;
+        // Covers the whole screen while AdvanceCascadeCatchup is still
+        // loading towards current_page, since freshly loaded cascade pages
+        // become visible before UpdateCascadeLayout has positioned them,
+        // which would otherwise flash a misplaced page on screen.
+        pu::ui::elm::Rectangle::Ref cascadeLoadingOverlay;
         RoundedRectangle::Ref pageIndicatorBg;
         pu::ui::elm::TextBlock::Ref pageIndicator;
         SideMenu::Ref sideMenu;
