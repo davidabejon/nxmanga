@@ -45,6 +45,19 @@ pu::sdl2::Surface CascadePagePrefetcher::TakeDecoded(const u32 index) {
     return result;
 }
 
+bool CascadePagePrefetcher::TryTakeDecoded(const u32 index, pu::sdl2::Surface &out_surface) {
+    std::lock_guard<std::mutex> lock(this->mutex);
+    for (size_t i = 0; i < this->decoded.size(); i++) {
+        if (this->decoded.at(i).index == index) {
+            out_surface = this->decoded.at(i).surface;
+            this->decoded.erase(this->decoded.begin() + i);
+            this->known.erase(index);
+            return true;
+        }
+    }
+    return false;
+}
+
 void CascadePagePrefetcher::Stop() {
     {
         std::lock_guard<std::mutex> lock(this->mutex);

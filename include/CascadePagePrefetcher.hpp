@@ -46,6 +46,16 @@ class CascadePagePrefetcher {
         // immediately.
         pu::sdl2::Surface TakeDecoded(const u32 index);
 
+        // Non-blocking counterpart to TakeDecoded: if index has already
+        // finished decoding, fills out_surface (caller takes ownership, same
+        // as TakeDecoded) and returns true. Otherwise returns false
+        // immediately without waiting and without queuing a request for it
+        // — the caller is expected to have already requested it (via
+        // RequestAhead or a prior TakeDecoded) if it wants one. Lets a
+        // render callback opportunistically drain already-decoded pages a
+        // little ahead of when the caller actually needs them.
+        bool TryTakeDecoded(const u32 index, pu::sdl2::Surface &out_surface);
+
         // Stops the worker thread (waiting for whatever it's mid-decoding
         // to finish) and frees every decoded surface still waiting to be
         // collected. Safe to call more than once; called automatically by

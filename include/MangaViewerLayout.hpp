@@ -9,6 +9,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class MangaViewerLayout : public pu::ui::Layout {
@@ -105,6 +107,25 @@ class MangaViewerLayout : public pu::ui::Layout {
         void ResetCascadeMode();
         void LoadCascadePage(const u32 index);
         void ReloadCascadePageTexture(const u32 index);
+        // Requests index's decode from cascade_prefetcher and remembers it
+        // in cascade_awaiting_texture, so AdvanceCascadeTexturePreload knows
+        // to pick it up. Every RequestAhead call for cascade pages should go
+        // through this instead of the prefetcher directly.
+        void RequestCascadeDecode(const u32 index);
+        // Returns index's texture: from cascade_pending_textures if
+        // AdvanceCascadeTexturePreload already converted it ahead of time,
+        // otherwise falls back to blocking on the prefetcher and converting
+        // it right now, exactly like before this cache existed.
+        pu::sdl2::TextureHandle::Ref TakeCascadeTexture(const u32 index);
+        // Converts one already-decoded, not-yet-needed page's surface into
+        // a GPU texture per call, called from the render callback every
+        // frame. A full-page texture upload is itself a few milliseconds of
+        // main-thread work — moving decode off-thread (CascadePagePrefetcher)
+        // removed most of the per-page stutter, but this last synchronous
+        // step still ran exactly when a page scrolled into range. Doing it
+        // here instead, one page ahead of when LoadCascadePage/
+        // ReloadCascadePageTexture actually need it, gets it off that path.
+        void AdvanceCascadeTexturePreload();
         void SetCascadeScroll(const s32 y);
         void SetCascadeScrollX(const s32 x);
         // Changes the width every cascade page is fit to and rescales every
@@ -168,6 +189,17 @@ class MangaViewerLayout : public pu::ui::Layout {
         std::vector<s32> cascade_offsets;
         u32 cascade_loaded_count;
         s32 cascade_total_height;
+        // Indices requested from cascade_prefetcher (via RequestCascadeDecode)
+        // whose surface AdvanceCascadeTexturePreload hasn't converted into a
+        // texture yet. Small and short-lived: only ever holds pages within
+        // the load-ahead/prefetch windows below.
+        std::unordered_set<u32> cascade_awaiting_texture;
+        // Textures AdvanceCascadeTexturePreload converted ahead of need,
+        // keyed by page index, waiting for LoadCascadePage/
+        // ReloadCascadePageTexture to claim them via TakeCascadeTexture. A
+        // null entry means the page was requested and resolved to be
+        // unreadable/undecodable, so it isn't retried forever.
+        std::unordered_map<u32, pu::sdl2::TextureHandle::Ref> cascade_pending_textures;
         // Width every cascade page is currently fit to; GetLogicalScreenWidth()
         // when unzoomed, wider/narrower once the user pinches/sticks zoom.
         s32 cascade_zoom_width;

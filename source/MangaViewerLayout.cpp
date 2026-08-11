@@ -43,6 +43,7 @@ MangaViewerLayout::MangaViewerLayout(const std::string &manga_path) : Layout::La
     // add one more permanent no-op closure every time cascade mode toggles on.
     this->AddRenderCallback([this]() {
         this->AdvanceCascadeCatchup();
+        this->AdvanceCascadeTexturePreload();
     });
 
     // A manga already fully read when opened always restarts at page 0, and
@@ -585,6 +586,10 @@ void MangaViewerLayout::EnterCascadeMode() {
     // tears down and replaces it, never reuses one across cascade sessions.
     this->cascade_prefetcher.reset();
     this->cascade_prefetcher = std::make_unique<CascadePagePrefetcher>(this->source.get());
+    // Anything queued/cached against the old prefetcher is meaningless
+    // against this new one, which knows nothing about those requests.
+    this->cascade_awaiting_texture.clear();
+    this->cascade_pending_textures.clear();
     this->PrefetchCascadePagesAhead();
 
     // Jumping straight to current_page (single-page mode, or a saved resume
@@ -631,6 +636,8 @@ void MangaViewerLayout::LeaveCascadeMode() {
     // Stops the background worker (joining it) before LoadPage below reads
     // from this->source on the main thread: the two must never overlap.
     this->cascade_prefetcher.reset();
+    this->cascade_awaiting_texture.clear();
+    this->cascade_pending_textures.clear();
 
     for (auto &image : this->cascade_images) {
         image->SetVisible(false);
@@ -668,20 +675,19 @@ void MangaViewerLayout::LoadCascadePage(const u32 index) {
     }
 
     // Blocks only if cascade_prefetcher hasn't finished decoding this page
-    // yet — normally it already has, having been requested (by an earlier
-    // call's PrefetchCascadePagesAhead, below) well before this point.
+    // yet, and TakeCascadeTexture hasn't already converted it to a texture
+    // ahead of time — normally one of those already happened, having been
+    // requested (by an earlier call's PrefetchCascadePagesAhead, below)
+    // well before this point.
     s32 height = 0;
-    auto surface = this->cascade_prefetcher->TakeDecoded(index);
-    if (surface != nullptr) {
-        auto tex = pu::ui::render::ConvertToTexture(surface);
-        if (tex != nullptr) {
-            const auto tex_w = pu::ui::render::GetTextureWidth(tex);
-            const auto tex_h = pu::ui::render::GetTextureHeight(tex);
-            height = static_cast<s32>((static_cast<double>(tex_h) * this->cascade_zoom_width) / tex_w);
+    auto tex_handle = this->TakeCascadeTexture(index);
+    if (tex_handle != nullptr) {
+        const auto tex_w = pu::ui::render::GetTextureWidth(tex_handle->Get());
+        const auto tex_h = pu::ui::render::GetTextureHeight(tex_handle->Get());
+        height = static_cast<s32>((static_cast<double>(tex_h) * this->cascade_zoom_width) / tex_w);
 
-            this->cascade_images.at(index)->SetImage(pu::sdl2::TextureHandle::New(tex));
-            this->cascade_images.at(index)->SetVisible(true);
-        }
+        this->cascade_images.at(index)->SetImage(tex_handle);
+        this->cascade_images.at(index)->SetVisible(true);
     }
     // A broken/unreadable page just contributes zero height rather than
     // getting stuck retrying it forever.
@@ -697,25 +703,88 @@ void MangaViewerLayout::LoadCascadePage(const u32 index) {
 void MangaViewerLayout::PrefetchCascadePagesAhead() {
     const auto target = std::min(static_cast<u32>(this->page_count), this->cascade_loaded_count + MangaViewerLayout::CascadePrefetchAheadCount);
     for (auto i = this->cascade_loaded_count; i < target; i++) {
-        this->cascade_prefetcher->RequestAhead(i);
+        this->RequestCascadeDecode(i);
     }
 }
 
 void MangaViewerLayout::ReloadCascadePageTexture(const u32 index) {
-    auto surface = this->cascade_prefetcher->TakeDecoded(index);
-    if (surface == nullptr) {
+    auto tex_handle = this->TakeCascadeTexture(index);
+    if (tex_handle == nullptr) {
         return;
     }
 
-    auto tex = pu::ui::render::ConvertToTexture(surface);
-    if (tex == nullptr) {
-        return;
-    }
-    this->cascade_images.at(index)->SetImage(pu::sdl2::TextureHandle::New(tex));
+    this->cascade_images.at(index)->SetImage(tex_handle);
     // LeaveCascadeMode hides every cascade image on the way out; a page
     // that's merely being re-textured here (as opposed to loaded for the
     // first time via LoadCascadePage) needs its visibility restored too.
     this->cascade_images.at(index)->SetVisible(true);
+}
+
+void MangaViewerLayout::RequestCascadeDecode(const u32 index) {
+    // Already converted and waiting in cascade_pending_textures: the
+    // prefetcher itself no longer knows about it (TryTakeDecoded removed it
+    // from `known` when claiming the surface), so without this check
+    // RequestAhead below would think it's a fresh request and decode it a
+    // second time for nothing.
+    if (this->cascade_pending_textures.find(index) != this->cascade_pending_textures.end()) {
+        return;
+    }
+
+    this->cascade_prefetcher->RequestAhead(index);
+    this->cascade_awaiting_texture.insert(index);
+}
+
+pu::sdl2::TextureHandle::Ref MangaViewerLayout::TakeCascadeTexture(const u32 index) {
+    auto pending = this->cascade_pending_textures.find(index);
+    if (pending != this->cascade_pending_textures.end()) {
+        auto tex_handle = pending->second;
+        this->cascade_pending_textures.erase(pending);
+        return tex_handle;
+    }
+
+    // Not preloaded yet (e.g. requested only just now, or scrolling faster
+    // than AdvanceCascadeTexturePreload's one-per-frame pace): fall back to
+    // blocking on the prefetcher and converting it right here, exactly like
+    // before this cache existed.
+    this->cascade_awaiting_texture.erase(index);
+    auto surface = this->cascade_prefetcher->TakeDecoded(index);
+    if (surface == nullptr) {
+        return nullptr;
+    }
+
+    auto tex = pu::ui::render::ConvertToTexture(surface);
+    if (tex == nullptr) {
+        return nullptr;
+    }
+    return pu::sdl2::TextureHandle::New(tex);
+}
+
+void MangaViewerLayout::AdvanceCascadeTexturePreload() {
+    if (!this->cascade_mode || (this->cascade_prefetcher == nullptr) || this->cascade_awaiting_texture.empty()) {
+        return;
+    }
+
+    for (auto it = this->cascade_awaiting_texture.begin(); it != this->cascade_awaiting_texture.end(); ++it) {
+        const auto index = *it;
+        pu::sdl2::Surface surface = nullptr;
+        if (!this->cascade_prefetcher->TryTakeDecoded(index, surface)) {
+            continue;
+        }
+
+        pu::sdl2::TextureHandle::Ref tex_handle = nullptr;
+        if (surface != nullptr) {
+            auto tex = pu::ui::render::ConvertToTexture(surface);
+            if (tex != nullptr) {
+                tex_handle = pu::sdl2::TextureHandle::New(tex);
+            }
+        }
+        this->cascade_pending_textures.emplace(index, tex_handle);
+        this->cascade_awaiting_texture.erase(it);
+        // One GPU upload per frame is the whole point: doing every ready
+        // page at once would just move the stutter here instead of
+        // removing it.
+        break;
+    }
 }
 
 void MangaViewerLayout::SetCascadeScroll(const s32 y) {
@@ -849,7 +918,7 @@ void MangaViewerLayout::UpdateCascadeTextures() {
             image->SetImage(nullptr);
         }
         else if (!in_range && !image->IsImageValid() && (page_bottom >= prefetch_above) && (page_top <= prefetch_below)) {
-            this->cascade_prefetcher->RequestAhead(i);
+            this->RequestCascadeDecode(i);
         }
     }
 }
