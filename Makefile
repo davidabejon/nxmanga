@@ -46,7 +46,7 @@ ROMFS		:=	romfs
 
 APP_TITLE	:=	NXmanga
 APP_AUTHOR	:=	David Abejon
-APP_VERSION	:=	0.0.1
+APP_VERSION	:=	1.0.0
 
 #---------------------------------------------------------------------------------
 # options for code generation
